@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    ".env": "node --env-file=.env server.mjs",
+    "start": "node server.mjs",
     "preview": "vite preview",
     "automation": "node --env-file=.env worker.mjs"
   },
