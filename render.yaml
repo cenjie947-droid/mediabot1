@@ -1,0 +1,59 @@
+services:
+  - type: web
+    name: mediabot-web
+    runtime: node
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: PUBLIC_APP_URL
+        sync: false
+      - key: AI_BASE_URL
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_MODEL
+        sync: false
+      - key: HOT_FEEDS
+        sync: false
+      - key: DOUYIN_CLIENT_KEY
+        sync: false
+      - key: DOUYIN_CLIENT_SECRET
+        sync: false
+      - key: DOUYIN_REDIRECT_URI
+        sync: false
+      - key: XHS_CLIENT_ID
+        sync: false
+      - key: XHS_CLIENT_SECRET
+        sync: false
+      - key: XHS_REDIRECT_URI
+        sync: false
+
+  - type: cron
+    name: mediabot-automation
+    schedule: "*/15 * * * *"
+    buildCommand: npm ci
+    startCommand: npm run automation
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: AI_BASE_URL
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_MODEL
+        sync: false
+      - key: HOT_FEEDS
+        sync: false

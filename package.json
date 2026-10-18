@@ -1,0 +1,19 @@
+{
+  "name": "mediabot-web",
+  "private": true,
+  "version": "0.7.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "start": "node --env-file=.env server.mjs",
+    "preview": "vite preview",
+    "automation": "node --env-file=.env worker.mjs"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.118.0",
+    "vite": "7.1.7",
+    "express": "5.1.0",
+    "cron-parser": "5.10.2"
+  }
+}
