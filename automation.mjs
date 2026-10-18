@@ -109,6 +109,18 @@ async function executeTask(task) {
   else if (task.task_type==='generate') result=await generate(task.user_id,config)
   else if (task.task_type==='publish') { const { publishJobs } = await import('./publishers.mjs'); const { data: jobs, error } = await admin.from('publish_jobs').select('*').eq('user_id',task.user_id).eq('status','queued').order('scheduled_at',{ascending:true}).limit(Number(config.limit||5)); if(error) throw new Error(error.message); result=await publishJobs(admin,jobs||[]) }
   else if (task.task_type==='sync_metrics') result={ skipped:true, reason:'平台数据同步接口尚未接入' }
+    else if (task.task_type==='radar_fetch') {
+  const { fetchDouyinRadar } = await import('./radar.mjs')
+  result = await fetchDouyinRadar(config)
+}
+else if (task.task_type==='radar_analyze') {
+  const { analyzeRadar } = await import('./trend-engine.mjs')
+  result = await analyzeRadar(config)
+}
+else if (task.task_type==='radar_category') {
+  const { runCategoryRadar } = await import('./category-trend-engine.mjs')
+  result = await runCategoryRadar(config)
+}
   else result={ skipped:true }
   const next = nextRun(task.cron_expression)
   await admin.from('scheduled_tasks').update({ last_run_at:new Date().toISOString(), next_run_at:next, last_status:'success', last_error:null, run_count:(task.run_count||0)+1 }).eq('id',task.id)
