@@ -230,12 +230,13 @@ async function renderRemixLab(view) {
       <div><span class="eyebrow">MEDIABOT · VIDEO REMIX</span><h1>🎬 自动剪辑实验室</h1><p>提供爆款参考和自己的视频素材，AI分析镜头后自动筛选、剪辑并合成新视频。不生成AI视频画面。</p></div>
       <div class="radar-hero-tag">素材由你提供</div>
     </div>
-    <div class="notice">说明：当前版本不会直接读取链接里的视频画面或声音，链接只作为来源记录。要分析具体爆款，请上传参考截图并补充内容说明；系统会分析截图与自有素材关键帧，再规划剪辑。请仅使用你有权使用的素材和音乐。</div>
+    <div class="notice">建议上传你有权使用的爆款参考视频，系统会分析抽样画面与语音内容；仅粘贴链接时，若平台限制访问，系统不会假装已经看过。最终成片只使用你的自有素材。</div>
     <div class="card">
-      <h3>① 添加自己的素材</h3>
+      <h3>① 上传素材并选择分类</h3>
       <p class="muted">可批量上传视频，另可上传爆款截图和多首已获授权的背景音乐。系统会根据剪辑情绪和音乐文件名线索自动挑选；建议将音乐命名为“悬疑_紧张.mp3”“治愈_温暖.mp3”等。视频用于剪辑，截图只用于参考分析。</p>
       <div class="remix-upload-grid">
         <label>视频素材（可多选）<input id="remixVideoFiles" type="file" accept="video/*" multiple></label>
+        <label>爆款参考视频（可选）<input id="remixReferenceVideo" type="file" accept="video/*"></label>
         <label>爆款参考截图（可选）<input id="remixReferenceImage" type="file" accept="image/*"></label>
         <label>背景音乐（可选）<input id="remixMusicFile" type="file" accept="audio/*"></label>
       </div>
@@ -244,12 +245,14 @@ async function renderRemixLab(view) {
     <div class="card">
       <h3>② 告诉 AI 你要参考哪条爆款</h3>
       <form id="remixForm" class="form">
+        <label>内容分类<select id="remixCategory"><option>搞笑</option><option>情感</option><option>知识</option><option>美食</option><option>生活</option><option>影视</option><option>宠物</option><option>汽车</option><option>游戏</option><option>其他</option></select></label>
         <label>爆款视频链接（可选）<input id="remixReferenceUrl" type="url" placeholder="粘贴抖音视频链接"></label>
         <label>爆款内容说明（建议填写）<textarea id="remixReferenceNotes" rows="3" placeholder="例如：开头是反转，前半段制造悬念，结尾有情绪释放。链接无法读取时，说明越具体越好。"></textarea></label>
         <div><b>选择要参与剪辑的视频素材</b><div id="remixAssetList" class="remix-asset-list"><div class="empty">正在读取素材库…</div></div></div>
         <label>背景音乐 <select id="remixMusicChoice"><option value="">不额外添加音乐，保留原片声音</option></select></label>
         <label>参考截图 <select id="remixImageChoice"><option value="">不使用参考截图</option></select></label>
-        <button id="startRemixBtn" type="submit">▶ 开始分析并自动剪辑</button>
+        <label>已上传的参考视频 <select id="remixReferenceVideoChoice"><option value="">不使用参考视频</option></select></label>
+        <button id="startRemixBtn" type="submit">✨ 一键上传、分析并自动剪辑</button>
         <div id="remixJobStatus" role="status"></div>
       </form>
     </div>
@@ -260,16 +263,17 @@ async function renderRemixLab(view) {
   await refreshRecentRemixes()
 }
 
-async function uploadRemixFiles() {
+async function uploadRemixFiles({ quiet = false } = {}) {
   const button=$('#uploadRemixFiles'),msg=$('#remixUploadMsg')
-  const videoFiles=[...($('#remixVideoFiles').files||[])], imageFile=$('#remixReferenceImage').files?.[0], musicFile=$('#remixMusicFile').files?.[0]
-  const files=[...videoFiles,...(imageFile?[imageFile]:[]),...(musicFile?[musicFile]:[])]
-  if(!files.length) { msg.textContent='请先选择要上传的文件'; return }
-  if(files.some(f=>f.size>1024*1024*1024)) { msg.textContent='单个文件不能超过1GB'; return }
-  button.disabled=true;button.textContent='上传中…';msg.textContent=''
+  const uploaded={videoIds:[],referenceVideoId:'',imageId:'',musicId:''}
+  const videoFiles=[...($('#remixVideoFiles').files||[])], referenceVideoFile=$('#remixReferenceVideo')?.files?.[0], imageFile=$('#remixReferenceImage').files?.[0], musicFile=$('#remixMusicFile').files?.[0]
+  const files=[...videoFiles,...(referenceVideoFile?[referenceVideoFile]:[]),...(imageFile?[imageFile]:[]),...(musicFile?[musicFile]:[])]
+  if(!files.length) { if(!quiet) msg.textContent='没有新文件，将使用已上传的素材'; return uploaded }
+  if(files.some(f=>f.size>1024*1024*1024)) { const error=new Error('单个文件不能超过1GB'); if(quiet) throw error; msg.textContent=error.message; return uploaded }
+  if(button) {button.disabled=true;button.textContent='上传中…'} msg.textContent=''
   try {
     for(const file of files) {
-      const folder=file.type.startsWith('video/')?'videos':file.type.startsWith('audio/')?'music':'references'
+      const folder=file===referenceVideoFile?'references':file.type.startsWith('video/')?'videos':file.type.startsWith('audio/')?'music':'references'
       const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(-120)
       const storagePath=user.id+'/'+folder+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'-'+safeName
       const {error:uploadError}=await supabase.storage.from('publish-media').upload(storagePath,file,{upsert:false,contentType:file.type})
@@ -277,12 +281,18 @@ async function uploadRemixFiles() {
       const response=await apiFetch('/api/video/assets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({storagePath,fileName:file.name,mimeType:file.type,sizeBytes:file.size})})
       const result=await response.json()
       if(!response.ok) throw new Error(result.error||'素材登记失败')
+      const id=result.data?.id
+      if(file===referenceVideoFile) uploaded.referenceVideoId=id||''
+      else if(videoFiles.includes(file)) {if(id) uploaded.videoIds.push(id)}
+      else if(file===imageFile) uploaded.imageId=id||''
+      else if(file===musicFile) uploaded.musicId=id||''
     }
-    $('#remixVideoFiles').value='';$('#remixReferenceImage').value='';$('#remixMusicFile').value=''
+    $('#remixVideoFiles').value='';if($('#remixReferenceVideo')) $('#remixReferenceVideo').value='';$('#remixReferenceImage').value='';$('#remixMusicFile').value=''
     msg.textContent='上传成功。'
     await refreshRemixAssets()
-  } catch(e) { msg.textContent='上传失败：'+e.message;msg.className='error' }
-  finally { button.disabled=false;button.textContent='上传所选文件' }
+    return uploaded
+  } catch(e) { msg.textContent='上传失败：'+e.message;msg.className='error'; if(quiet) throw e }
+  finally { if(button) {button.disabled=false;button.textContent='上传所选文件'} }
 }
 
 async function refreshRemixAssets() {
@@ -293,11 +303,14 @@ async function refreshRemixAssets() {
     const payload=await response.json()
     if(!response.ok) throw new Error(payload.error||'读取素材失败')
     const assets=payload.data||[]
-    const videos=assets.filter(a=>String(a.mime_type).startsWith('video/'))
+    const videos=assets.filter(a=>String(a.mime_type).startsWith('video/') && !String(a.storage_path).includes('/references/'))
+    const referenceVideos=assets.filter(a=>String(a.mime_type).startsWith('video/') && String(a.storage_path).includes('/references/'))
     const audios=assets.filter(a=>String(a.mime_type).startsWith('audio/'))
     const images=assets.filter(a=>String(a.mime_type).startsWith('image/'))
     box.innerHTML=videos.length?videos.map(a=>'<label class="remix-asset"><input type="checkbox" data-remix-asset="'+esc(a.id)+'"><span><b>'+esc(a.file_name)+'</b><small>'+(Number(a.size_bytes)/1024/1024).toFixed(1)+' MB · '+new Date(a.created_at).toLocaleString()+'</small></span></label>').join(''):empty('先上传你自己的视频素材')
     const music=$('#remixMusicChoice'),image=$('#remixImageChoice')
+    const referenceVideo=$('#remixReferenceVideoChoice')
+    if(referenceVideo) referenceVideo.innerHTML='<option value="">不使用已上传参考视频</option>'+referenceVideos.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.file_name)+'</option>').join('')
     music.innerHTML='<option value="auto">AI自动选择音乐库中最匹配的一首</option><option value="">不额外添加音乐，保留原片声音</option>'+audios.map(a=>'<option value="'+esc(a.id)+'">手动指定：'+esc(a.file_name)+'</option>').join('')
     image.innerHTML='<option value="">不使用参考截图</option>'+images.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.file_name)+'</option>').join('')
   } catch(e) { box.innerHTML='<div class="error">'+esc(e.message)+'</div>' }
@@ -306,17 +319,20 @@ async function refreshRemixAssets() {
 async function startRemixJob(event) {
   event.preventDefault()
   const button=$('#startRemixBtn'),status=$('#remixJobStatus')
-  const assetIds=[...document.querySelectorAll('[data-remix-asset]:checked')].map(x=>x.dataset.remixAsset)
-  if(!assetIds.length) { status.textContent='请至少选择一个视频素材'; return }
-  button.disabled=true;button.textContent='正在创建任务…';status.textContent='AI 将分析参考信息和素材关键帧，请稍候。'
+  button.disabled=true;button.textContent='上传素材并开始分析…';status.textContent='正在准备素材，然后自动分析画面、规划剪辑并生成成片。'
   try {
-    const response=await apiFetch('/api/video/remix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds,referenceUrl:$('#remixReferenceUrl').value.trim(),referenceNotes:$('#remixReferenceNotes').value.trim(),musicAssetId:$('#remixMusicChoice').value,referenceImageAssetId:$('#remixImageChoice').value})})
+    const uploaded=await uploadRemixFiles({quiet:true})
+    const assetIds=uploaded.videoIds.length?uploaded.videoIds:[...document.querySelectorAll('[data-remix-asset]:checked')].map(x=>x.dataset.remixAsset)
+    if(!assetIds.length) throw new Error('请先选择或上传至少一个自己的视频素材')
+    const category=$('#remixCategory')?.value||'其他'
+    const notes='内容分类：'+category+'。'+($('#remixReferenceNotes').value.trim()||'')
+    const response=await apiFetch('/api/video/remix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds,referenceUrl:$('#remixReferenceUrl').value.trim(),referenceNotes:notes,musicAssetId:uploaded.musicId||$('#remixMusicChoice').value,referenceImageAssetId:uploaded.imageId||$('#remixImageChoice').value,referenceVideoAssetId:uploaded.referenceVideoId||$('#remixReferenceVideoChoice')?.value||''})})
     const payload=await response.json()
     if(!response.ok) throw new Error(payload.error||'创建剪辑任务失败')
     status.textContent='任务已开始。后台正在分析镜头并合成视频…'
     await pollRemixJob(payload.job.id)
   } catch(e) { status.innerHTML='<div class="error">'+esc(e.message)+'</div>' }
-  finally { button.disabled=false;button.textContent='▶ 开始分析并自动剪辑' }
+  finally { button.disabled=false;button.textContent='✨ 一键上传、分析并自动剪辑' }
 }
 
 async function pollRemixJob(id) {

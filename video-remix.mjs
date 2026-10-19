@@ -38,32 +38,34 @@ async function extractFrames(file, duration, assetIndex, dir) {
   return frames
 }
 
-async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes = null, referenceImageMime = 'image/jpeg', musicOptions = []) {
+async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes = null, referenceImageMime = 'image/jpeg', musicOptions = [], referenceVideoFrames = [], referenceTranscript = '') {
   if (!AI_API_KEY) throw new Error('未配置 AI_API_KEY，无法分析参考爆款和素材镜头')
-  const frameMessages = frames.slice(0, 48).map(frame => ({
+  const allFrames = [...referenceVideoFrames.map(frame => ({ ...frame, isReference: true })), ...frames].slice(0, 48)
+  const frameMessages = allFrames.map(frame => ({
     type: 'image_url',
     image_url: { url: 'data:image/jpeg;base64,' + frame.bytes.toString('base64'), detail: 'low' }
   }))
-  const frameLabels = frames.slice(0, 48).map((f, i) => '图片' + (i + (referenceImageBytes ? 2 : 1)) + '=素材' + (f.assetIndex + 1) + '，时间点' + f.timeSeconds + '秒').join('\n')
-  const system = '你是短视频剪辑导演。用户提供的原始素材是唯一可用画面来源，严禁建议生成AI视频或虚构素材。根据参考爆款信息和素材关键帧，返回严格JSON：title, hook, structure, musicMood, targetDuration, clips数组。每个clips元素包含assetIndex(从0开始), startSeconds, endSeconds, purpose。只能选择已提供素材的索引；片段长度2到6秒，时间不能超出素材时长；优先选择视觉明确、动作/情绪鲜明的镜头，按开头吸引点、主体、高潮、结尾排序。当前系统不会直接读取链接里的视频画面或声音；链接只作来源记录。必须依据用户提供的截图和说明分析，不得声称已观看链接。'
+  const frameLabels = allFrames.map((f, i) => '图片' + (i + (referenceImageBytes ? 2 : 1)) + '=' + (f.isReference ? '爆款参考视频' : '自有素材' + (f.assetIndex + 1)) + '，时间点' + f.timeSeconds + '秒').join('\n')
+  const system = '你是短视频剪辑导演。用户提供的原始素材是唯一可用画面来源，严禁建议生成AI视频或虚构素材。根据参考爆款信息和素材关键帧，返回严格JSON：title, caption（可直接发布的中文文案）, hashtags（字符串数组）, hook, structure, musicMood, targetDuration, clips数组。每个clips元素包含assetIndex(从0开始), startSeconds, endSeconds, purpose。只能选择已提供素材的索引；片段长度2到6秒，时间不能超出素材时长；优先选择视觉明确、动作/情绪鲜明的镜头，按开头吸引点、主体、高潮、结尾排序。如果提供了参考视频关键帧和语音转写，必须综合分析画面、台词、节奏与情绪；仅提供链接时不得声称已观看链接。'
   const musicText = musicOptions.length ? '配乐候选（索引：文件名）：' + musicOptions.map((m,i)=>i + ': ' + m.fileName).join(' | ') + '。请根据画面情绪和文件名线索选择最合适的配乐，并返回selectedMusicIndex。' : '没有可选配乐。'
-  const userText = '参考爆款链接：' + (referenceUrl || '未提供') + '\n用户补充的参考说明：' + (referenceNotes || '未提供') + '\n素材信息：\n' + assets.map((a,i)=>'素材' + (i+1) + '（索引' + i + '）：文件名=' + a.fileName + '，时长=' + a.duration.toFixed(1) + '秒').join('\n') + '\n关键帧标记：\n' + frameLabels + '\n请规划一条约30秒、使用现有素材剪辑的新视频。选择最多10段镜头，总时长控制在15到60秒；只返回JSON。配乐信息：' + musicText
+  const userText = '参考爆款链接：' + (referenceUrl || '未提供') + '\n用户补充的参考说明：' + (referenceNotes || '未提供') + '\n参考视频语音转写：\n' + (referenceTranscript || '未能取得参考视频语音转写') + '\n素材信息：\n' + assets.map((a,i)=>'素材' + (i+1) + '（索引' + i + '）：文件名=' + a.fileName + '，时长=' + a.duration.toFixed(1) + '秒').join('\n') + '\n关键帧标记：\n' + frameLabels + '\n请规划一条约30秒、使用现有素材剪辑的新视频。选择最多10段镜头，总时长控制在15到60秒；只返回JSON。配乐信息：' + musicText
   const response = await fetch(AI_BASE_URL + '/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + AI_API_KEY },
     body: JSON.stringify({
       model: AI_MODEL, temperature: 0.3, response_format: { type: 'json_object' },
-      messages: [{ role: 'system', content: system }, { role: 'user', content: [{ type: 'text', text: userText + (referenceImageBytes ? '\n第一张图片是用户提供的爆款参考截图，后续图片是用户素材关键帧。' : '\n图片均为用户素材关键帧。') }, ...(referenceImageBytes ? [{ type: 'image_url', image_url: { url: 'data:' + referenceImageMime + ';base64,' + referenceImageBytes.toString('base64'), detail: 'high' } }] : []), ...frameMessages] }]
+      messages: [{ role: 'system', content: system }, { role: 'user', content: [{ type: 'text', text: userText + (referenceImageBytes ? '\n第一张图片是爆款参考截图。' : '') + (referenceVideoFrames.length ? '\n随后包含爆款参考视频关键帧，其余图片是自有素材关键帧。' : '\n图片均为自有素材关键帧。') }, ...(referenceImageBytes ? [{ type: 'image_url', image_url: { url: 'data:' + referenceImageMime + ';base64,' + referenceImageBytes.toString('base64'), detail: 'high' } }] : []), ...frameMessages] }]
     })
   })
   const raw = await response.text()
-  if (!response.ok) throw new Error('AI 镜头分析失败（' + response.status + '）:' + raw.slice(0, 500))
+  if (!response.ok && response.status === 401) throw new Error('AI 接口认证失败（401）：当前 AI_API_KEY 无效或与 AI_BASE_URL 不匹配。请在服务器环境变量中更换有效密钥；不要把密钥发到聊天里。')
+  if (!response.ok) throw new Error('AI 镜头分析失败（' + response.status + '）：请检查 AI 服务配置后重试。' + (response.status >= 500 ? ' 服务商暂时异常。' : ''))
   const content = JSON.parse(raw).choices?.[0]?.message?.content
   if (!content) throw new Error('AI 未返回剪辑方案')
   return JSON.parse(content)
 }
 
-export async function createVideoRemix({ admin, userId, referenceUrl = '', referenceNotes = '', assetPaths = [], musicPath = '', referenceImagePath = '', referenceImageMime = 'image/jpeg', musicOptions = [] }) {
+export async function createVideoRemix({ admin, userId, referenceUrl = '', referenceNotes = '', assetPaths = [], musicPath = '', referenceImagePath = '', referenceImageMime = 'image/jpeg', referenceVideoPath = '', musicOptions = [] }) {
   if (!ffmpegPath) throw new Error('当前服务器没有可用的 FFmpeg 视频处理程序')
   if (!Array.isArray(assetPaths) || assetPaths.length < 1 || assetPaths.length > 12) throw new Error('请先选择1到12个自己的视频素材')
   const temp = await mkdtemp(path.join(os.tmpdir(), 'mediabot-remix-'))
@@ -85,13 +87,36 @@ export async function createVideoRemix({ admin, userId, referenceUrl = '', refer
       frames.push(...await extractFrames(localPath, duration, i, temp))
     }
     let referenceImageBytes = null
+    const referenceVideoFrames = []
+    let referenceTranscript = ''
+    if (referenceVideoPath) {
+      if (!String(referenceVideoPath).startsWith(userId + '/') || String(referenceVideoPath).includes('..')) throw new Error('参考视频路径无效或不属于当前用户')
+      const { data, error } = await admin.storage.from('publish-media').download(referenceVideoPath)
+      if (error || !data) throw new Error('无法读取爆款参考视频')
+      const referenceLocalPath = path.join(temp, 'reference-video.mp4')
+      await writeFile(referenceLocalPath, Buffer.from(await data.arrayBuffer()))
+      const info = await durationOf(referenceLocalPath)
+      referenceVideoFrames.push(...(await extractFrames(referenceLocalPath, info.duration, -1, temp)).map(f => ({ ...f, isReference: true })))
+      if (info.hasAudio && AI_API_KEY) {
+        const audioPath = path.join(temp, 'reference-audio.mp3')
+        await run(ffmpegPath, ['-y', '-i', referenceLocalPath, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', '-t', '300', audioPath])
+        try {
+          const audioBytes = await readFile(audioPath)
+          const form = new FormData()
+          form.append('model', 'whisper-1')
+          form.append('file', new Blob([audioBytes], { type: 'audio/mpeg' }), 'reference-audio.mp3')
+          const tr = await fetch(AI_BASE_URL + '/audio/transcriptions', { method: 'POST', headers: { Authorization: 'Bearer ' + AI_API_KEY }, body: form })
+          if (tr.ok) referenceTranscript = String((await tr.json()).text || '').slice(0, 12000)
+        } catch { /* transcription is optional; video analysis can continue without it */ }
+      }
+    }
     if (referenceImagePath) {
       if (!String(referenceImagePath).startsWith(userId + '/') || String(referenceImagePath).includes('..')) throw new Error('参考截图路径无效或不属于当前用户')
       const { data, error } = await admin.storage.from('publish-media').download(referenceImagePath)
       if (error || !data) throw new Error('无法读取爆款参考截图')
       referenceImageBytes = Buffer.from(await data.arrayBuffer())
     }
-    const plan = await planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes, referenceImageMime, musicOptions)
+    const plan = await planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes, referenceImageMime, musicOptions, referenceVideoFrames, referenceTranscript)
     const proposed = Array.isArray(plan.clips) ? plan.clips.slice(0, 10) : []
     const clips = proposed.map(c => {
       const assetIndex = Number(c.assetIndex), asset = assets[assetIndex]
@@ -136,6 +161,8 @@ export async function createVideoRemix({ admin, userId, referenceUrl = '', refer
       outputPath,
       editPlan: {
         title: String(plan.title || 'MediaBot 自动剪辑').slice(0, 160),
+        caption: String(plan.caption || '').slice(0, 4000),
+        hashtags: Array.isArray(plan.hashtags) ? plan.hashtags.map(tag => String(tag).replace(/^#/, '').slice(0, 40)).slice(0, 20) : [],
         hook: String(plan.hook || '').slice(0, 500),
         structure: String(plan.structure || '').slice(0, 1000),
         musicMood: String(plan.musicMood || '').slice(0, 120),
@@ -143,7 +170,7 @@ export async function createVideoRemix({ admin, userId, referenceUrl = '', refer
         durationSeconds: Number(clips.reduce((n,c)=>n+c.end-c.start,0).toFixed(1)),
         musicApplied: Boolean(chosenMusicPath),
         selectedMusicName: chosenMusicName,
-        disclaimer: '这是基于抽样关键帧的自动剪辑初版，建议发布前检查镜头连续性、声音和版权。参考链接若未提供可访问视频文件，AI只依据你填写的说明分析。'
+        referenceAnalyzed: Boolean(referenceVideoPath || referenceImageBytes), referenceTranscriptAvailable: Boolean(referenceTranscript), disclaimer: 'AI已结合可用的参考画面与语音转写（如有）以及自有素材关键帧规划剪辑。仅粘贴链接但未上传参考视频时，系统无法保证读取链接内容。发布前请检查成片和素材授权。'
       }
     }
   } finally {
