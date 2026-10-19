@@ -269,7 +269,7 @@ async function uploadRemixFiles({ quiet = false } = {}) {
   const videoFiles=[...($('#remixVideoFiles').files||[])], referenceVideoFile=$('#remixReferenceVideo')?.files?.[0], imageFile=$('#remixReferenceImage').files?.[0], musicFile=$('#remixMusicFile').files?.[0]
   const files=[...videoFiles,...(referenceVideoFile?[referenceVideoFile]:[]),...(imageFile?[imageFile]:[]),...(musicFile?[musicFile]:[])]
   if(!files.length) { if(!quiet) msg.textContent='没有新文件，将使用已上传的素材'; return uploaded }
-  if(files.some(f=>f.size>1024*1024*1024)) throw new Error('单个文件不能超过1GB')
+  if(files.some(f=>f.size>1024*1024*1024)) { const error=new Error('单个文件不能超过1GB'); if(quiet) throw error; msg.textContent=error.message; return uploaded }
   if(button) {button.disabled=true;button.textContent='上传中…'} msg.textContent=''
   try {
     for(const file of files) {
