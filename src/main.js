@@ -160,7 +160,9 @@ function render() {
         <button id="generateBtn" type="submit">✨ AI 真正生成</button>
         <div id="aiResult"></div>
       </form>`)
-  } else if (active === 'remix') {\n    renderRemixLab(view)\n  } else if (active === 'library') {
+  } else if (active === 'remix') {
+    renderRemixLab(view)
+  } else if (active === 'library') {
     view.innerHTML = card('内容库', data.content.map((x) => `<div class="row"><div><b>${esc(x.title)}</b><small>${esc(x.platform)} · ${esc(x.status)} · 素材 ${Array.isArray(x.media_urls) && x.media_urls.length ? '已上传' : '无'}</small></div><div class="mini-actions"><strong>${x.ai_score ?? '-'}</strong><button data-queue-publish="${x.id}">加入发布队列</button></div></div>`).join('') || empty('暂无内容'))
     document.querySelectorAll('[data-queue-publish]').forEach((button) => button.addEventListener('click', () => queuePublish(button.dataset.queuePublish)))
   } else if (active === 'schedule') {
@@ -345,7 +347,8 @@ async function refreshRecentRemixes() {
     const {data,error}=await supabase.from('video_remix_jobs').select('*').eq('user_id',user.id).order('created_at',{ascending:false}).limit(10)
     if(error) throw error
     box.innerHTML=(data||[]).length?(data||[]).map(j=>'<div class="row"><div><b>'+esc(j.edit_plan?.title||'自动剪辑任务')+'</b><small>'+new Date(j.created_at).toLocaleString()+' · '+esc(j.status)+'</small>'+(j.error_message?'<small class="error">'+esc(j.error_message)+'</small>':'')+'</div>'+(j.status==='completed'?'<button data-open-remix="'+esc(j.id)+'">查看成片</button>'+(j.content_id?'<button data-queue-publish="'+esc(j.content_id)+'">加入发布队列</button>'):'')+'</div>').join(''):empty('尚无剪辑记录')
-    box.querySelectorAll('[data-queue-publish]').forEach(button=>button.addEventListener('click',()=>queuePublish(button.dataset.queuePublish)))\n    box.querySelectorAll('[data-open-remix]').forEach(button=>button.addEventListener('click',async()=>{
+    box.querySelectorAll('[data-queue-publish]').forEach(button=>button.addEventListener('click',()=>queuePublish(button.dataset.queuePublish)))
+    box.querySelectorAll('[data-open-remix]').forEach(button=>button.addEventListener('click',async()=>{
       try { const r=await apiFetch('/api/video/remix/'+encodeURIComponent(button.dataset.openRemix));const p=await r.json();if(!r.ok)throw new Error(p.error||'读取失败');const j=p.job;const plan=j.edit_plan||{};const status=$('#remixJobStatus');status.innerHTML='<div class="remix-result"><h4>'+esc(plan.title||'自动剪辑视频')+'</h4>'+(j.output_url?'<video controls playsinline src="'+esc(j.output_url)+'"></video><p><a href="'+esc(j.output_url)+'" target="_blank" rel="noopener noreferrer">打开 / 保存成片</a></p>':'')+'<pre>'+esc(JSON.stringify(plan,null,2))+'</pre></div>' } catch(e) { alert(e.message) }
     }))
   } catch(e) { box.innerHTML='<div class="error">'+esc(e.message)+'</div>' }
