@@ -40,10 +40,11 @@ async function extractFrames(file, duration, assetIndex, dir) {
 
 async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes = null, referenceImageMime = 'image/jpeg', musicOptions = [], referenceVideoFrames = [], referenceTranscript = '') {
   if (!AI_API_KEY) throw new Error('未配置 AI_API_KEY，无法分析参考爆款和素材镜头')
-  const allFrames = [...referenceVideoFrames.map(frame => ({ ...frame, isReference: true })), ...frames].slice(0, 48)
+  // Keep the request compatible with OpenAI-compatible providers such as Gemini.
+  const allFrames = [...referenceVideoFrames.map(frame => ({ ...frame, isReference: true })), ...frames].slice(0, 24)
   const frameMessages = allFrames.map(frame => ({
     type: 'image_url',
-    image_url: { url: 'data:image/jpeg;base64,' + frame.bytes.toString('base64'), detail: 'low' }
+    image_url: { url: 'data:image/jpeg;base64,' + frame.bytes.toString('base64') }
   }))
   const frameLabels = allFrames.map((f, i) => '图片' + (i + (referenceImageBytes ? 2 : 1)) + '=' + (f.isReference ? '爆款参考视频' : '自有素材' + (f.assetIndex + 1)) + '，时间点' + f.timeSeconds + '秒').join('\n')
   const system = '你是短视频剪辑导演。用户提供的原始素材是唯一可用画面来源，严禁建议生成AI视频或虚构素材。根据参考爆款信息和素材关键帧，返回严格JSON：title, caption（可直接发布的中文文案）, hashtags（字符串数组）, hook, structure, musicMood, targetDuration, clips数组。每个clips元素包含assetIndex(从0开始), startSeconds, endSeconds, purpose。只能选择已提供素材的索引；片段长度2到6秒，时间不能超出素材时长；优先选择视觉明确、动作/情绪鲜明的镜头，按开头吸引点、主体、高潮、结尾排序。如果提供了参考视频关键帧和语音转写，必须综合分析画面、台词、节奏与情绪；仅提供链接时不得声称已观看链接。'
@@ -53,13 +54,23 @@ async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenc
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + AI_API_KEY },
     body: JSON.stringify({
-      model: AI_MODEL, temperature: 0.3, response_format: { type: 'json_object' },
-      messages: [{ role: 'system', content: system }, { role: 'user', content: [{ type: 'text', text: userText + (referenceImageBytes ? '\n第一张图片是爆款参考截图。' : '') + (referenceVideoFrames.length ? '\n随后包含爆款参考视频关键帧，其余图片是自有素材关键帧。' : '\n图片均为自有素材关键帧。') }, ...(referenceImageBytes ? [{ type: 'image_url', image_url: { url: 'data:' + referenceImageMime + ';base64,' + referenceImageBytes.toString('base64'), detail: 'high' } }] : []), ...frameMessages] }]
+      model: AI_MODEL, temperature: 0.3,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: [{ type: 'text', text: userText + (referenceImageBytes ? '\n第一张图片是爆款参考截图。' : '') + (referenceVideoFrames.length ? '\n随后包含爆款参考视频关键帧，其余图片是自有素材关键帧。' : '\n图片均为自有素材关键帧。') }, ...(referenceImageBytes ? [{ type: 'image_url', image_url: { url: 'data:' + referenceImageMime + ';base64,' + referenceImageBytes.toString('base64') } }] : []), ...frameMessages] }]
     })
   })
   const raw = await response.text()
   if (!response.ok && response.status === 401) throw new Error('AI 接口认证失败（401）：当前 AI_API_KEY 无效或与 AI_BASE_URL 不匹配。请在服务器环境变量中更换有效密钥；不要把密钥发到聊天里。')
-  if (!response.ok) throw new Error('AI 镜头分析失败（' + response.status + '）：请检查 AI 服务配置后重试。' + (response.status >= 500 ? ' 服务商暂时异常。' : ''))
+  if (!response.ok) {
+    let detail = ''
+    try {
+      const parsed = JSON.parse(raw)
+      detail = String(parsed?.error?.message || parsed?.message || parsed?.error?.status || '').slice(0, 360)
+    } catch {
+      detail = raw.replace(/\s+/g, ' ').slice(0, 240)
+    }
+    const safeDetail = detail ? ' 服务商返回：' + detail : ''
+    throw new Error('AI 镜头分析失败（' + response.status + '）：' + (response.status >= 500 ? '服务商暂时异常。' : '请检查模型名称、接口地址及请求兼容性。') + safeDetail)
+  }
   const content = JSON.parse(raw).choices?.[0]?.message?.content
   if (!content) throw new Error('AI 未返回剪辑方案')
   return JSON.parse(content)
