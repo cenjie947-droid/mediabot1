@@ -40,11 +40,12 @@ async function extractFrames(file, duration, assetIndex, dir) {
 
 async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes = null, referenceImageMime = 'image/jpeg', musicOptions = [], referenceVideoFrames = [], referenceTranscript = '') {
   if (!AI_API_KEY) throw new Error('未配置 AI_API_KEY，无法分析参考爆款和素材镜头')
-  const allFrames = [...referenceVideoFrames.map(frame => ({ ...frame, isReference: true })), ...frames].slice(0, 48)\n  const frameMessages = allFrames.map(frame => ({
+  const allFrames = [...referenceVideoFrames.map(frame => ({ ...frame, isReference: true })), ...frames].slice(0, 48)
+  const frameMessages = allFrames.map(frame => ({
     type: 'image_url',
     image_url: { url: 'data:image/jpeg;base64,' + frame.bytes.toString('base64'), detail: 'low' }
   }))
-  const frameLabels = frames.slice(0, 48).map((f, i) => '图片' + (i + (referenceImageBytes ? 2 : 1)) + '=素材' + (f.assetIndex + 1) + '，时间点' + f.timeSeconds + '秒').join('\n')
+  const frameLabels = allFrames.map((f, i) => '图片' + (i + (referenceImageBytes ? 2 : 1)) + '=' + (f.isReference ? '爆款参考视频' : '自有素材' + (f.assetIndex + 1)) + '，时间点' + f.timeSeconds + '秒').join('\n')
   const system = '你是短视频剪辑导演。用户提供的原始素材是唯一可用画面来源，严禁建议生成AI视频或虚构素材。根据参考爆款信息和素材关键帧，返回严格JSON：title, hook, structure, musicMood, targetDuration, clips数组。每个clips元素包含assetIndex(从0开始), startSeconds, endSeconds, purpose。只能选择已提供素材的索引；片段长度2到6秒，时间不能超出素材时长；优先选择视觉明确、动作/情绪鲜明的镜头，按开头吸引点、主体、高潮、结尾排序。如果提供了参考视频关键帧和语音转写，必须综合分析画面、台词、节奏与情绪；仅提供链接时不得声称已观看链接。'
   const musicText = musicOptions.length ? '配乐候选（索引：文件名）：' + musicOptions.map((m,i)=>i + ': ' + m.fileName).join(' | ') + '。请根据画面情绪和文件名线索选择最合适的配乐，并返回selectedMusicIndex。' : '没有可选配乐。'
   const userText = '参考爆款链接：' + (referenceUrl || '未提供') + '\n用户补充的参考说明：' + (referenceNotes || '未提供') + '\n素材信息：\n' + assets.map((a,i)=>'素材' + (i+1) + '（索引' + i + '）：文件名=' + a.fileName + '，时长=' + a.duration.toFixed(1) + '秒').join('\n') + '\n关键帧标记：\n' + frameLabels + '\n请规划一条约30秒、使用现有素材剪辑的新视频。选择最多10段镜头，总时长控制在15到60秒；只返回JSON。配乐信息：' + musicText
@@ -85,6 +86,29 @@ export async function createVideoRemix({ admin, userId, referenceUrl = '', refer
       frames.push(...await extractFrames(localPath, duration, i, temp))
     }
     let referenceImageBytes = null
+    const referenceVideoFrames = []
+    let referenceTranscript = ''
+    if (referenceVideoPath) {
+      if (!String(referenceVideoPath).startsWith(userId + '/') || String(referenceVideoPath).includes('..')) throw new Error('参考视频路径无效或不属于当前用户')
+      const { data, error } = await admin.storage.from('publish-media').download(referenceVideoPath)
+      if (error || !data) throw new Error('无法读取爆款参考视频')
+      const referenceLocalPath = path.join(temp, 'reference-video.mp4')
+      await writeFile(referenceLocalPath, Buffer.from(await data.arrayBuffer()))
+      const info = await durationOf(referenceLocalPath)
+      referenceVideoFrames.push(...(await extractFrames(referenceLocalPath, info.duration, -1, temp)).map(f => ({ ...f, isReference: true })))
+      if (info.hasAudio && AI_API_KEY) {
+        const audioPath = path.join(temp, 'reference-audio.mp3')
+        await run(ffmpegPath, ['-y', '-i', referenceLocalPath, '-vn', '-ac', '1', '-ar', '16000', '-b:a', '64k', '-t', '300', audioPath])
+        try {
+          const audioBytes = await readFile(audioPath)
+          const form = new FormData()
+          form.append('model', 'whisper-1')
+          form.append('file', new Blob([audioBytes], { type: 'audio/mpeg' }), 'reference-audio.mp3')
+          const tr = await fetch(AI_BASE_URL + '/audio/transcriptions', { method: 'POST', headers: { Authorization: 'Bearer ' + AI_API_KEY }, body: form })
+          if (tr.ok) referenceTranscript = String((await tr.json()).text || '').slice(0, 12000)
+        } catch { /* transcription is optional; video analysis can continue without it */ }
+      }
+    }
     if (referenceImagePath) {
       if (!String(referenceImagePath).startsWith(userId + '/') || String(referenceImagePath).includes('..')) throw new Error('参考截图路径无效或不属于当前用户')
       const { data, error } = await admin.storage.from('publish-media').download(referenceImagePath)
