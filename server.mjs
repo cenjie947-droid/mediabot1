@@ -174,7 +174,14 @@ app.post('/api/video/remix', auth, async (req, res) => {
     if (error || !music || !music.mime_type.startsWith('audio/')) return res.status(400).json({ error: '配乐文件不存在或格式不支持' })
     musicPath = music.storage_path
   }
-  let referenceImagePath = ''\n  let referenceImageMime = 'image/jpeg'\n  if (referenceImageAssetId) {\n    const { data: image, error } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('id', referenceImageAssetId).eq('user_id', req.user.id).maybeSingle()\n    if (error || !image || !image.mime_type.startsWith('image/')) return res.status(400).json({ error: '爆款参考截图不存在或格式不支持' })\n    referenceImagePath = image.storage_path\n    referenceImageMime = image.mime_type\n  }\n  const { data: job, error: jobError } = await admin.from('video_remix_jobs').insert({
+  let referenceImagePath = ''
+  let referenceImageMime = 'image/jpeg'
+  if (referenceImageAssetId) {
+    const { data: image, error } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('id', referenceImageAssetId).eq('user_id', req.user.id).maybeSingle()
+    if (error || !image || !image.mime_type.startsWith('image/')) return res.status(400).json({ error: '爆款参考截图不存在或格式不支持' })
+    referenceImagePath = image.storage_path
+    referenceImageMime = image.mime_type
+  }\n  const { data: job, error: jobError } = await admin.from('video_remix_jobs').insert({
     user_id: req.user.id, reference_url: referenceUrl || null, reference_notes: referenceNotes || null,
     input_asset_ids: assetIds, music_storage_path: musicPath || null, status: 'analyzing'
   }).select().single()
