@@ -236,6 +236,7 @@ async function renderRemixLab(view) {
       <p class="muted">可批量上传视频，另可上传爆款截图和多首已获授权的背景音乐。系统会根据剪辑情绪和音乐文件名线索自动挑选；建议将音乐命名为“悬疑_紧张.mp3”“治愈_温暖.mp3”等。视频用于剪辑，截图只用于参考分析。</p>
       <div class="remix-upload-grid">
         <label>视频素材（可多选）<input id="remixVideoFiles" type="file" accept="video/*" multiple></label>
+        <label>爆款参考视频（可选）<input id="remixReferenceVideo" type="file" accept="video/*"></label>
         <label>爆款参考截图（可选）<input id="remixReferenceImage" type="file" accept="image/*"></label>
         <label>背景音乐（可选）<input id="remixMusicFile" type="file" accept="audio/*"></label>
       </div>
@@ -249,6 +250,7 @@ async function renderRemixLab(view) {
         <div><b>选择要参与剪辑的视频素材</b><div id="remixAssetList" class="remix-asset-list"><div class="empty">正在读取素材库…</div></div></div>
         <label>背景音乐 <select id="remixMusicChoice"><option value="">不额外添加音乐，保留原片声音</option></select></label>
         <label>参考截图 <select id="remixImageChoice"><option value="">不使用参考截图</option></select></label>
+        <label>已上传的参考视频 <select id="remixReferenceVideoChoice"><option value="">不使用参考视频</option></select></label>
         <button id="startRemixBtn" type="submit">▶ 开始分析并自动剪辑</button>
         <div id="remixJobStatus" role="status"></div>
       </form>
@@ -262,14 +264,14 @@ async function renderRemixLab(view) {
 
 async function uploadRemixFiles() {
   const button=$('#uploadRemixFiles'),msg=$('#remixUploadMsg')
-  const videoFiles=[...($('#remixVideoFiles').files||[])], imageFile=$('#remixReferenceImage').files?.[0], musicFile=$('#remixMusicFile').files?.[0]
-  const files=[...videoFiles,...(imageFile?[imageFile]:[]),...(musicFile?[musicFile]:[])]
+  const videoFiles=[...($('#remixVideoFiles').files||[])], referenceVideoFile=$('#remixReferenceVideo')?.files?.[0], imageFile=$('#remixReferenceImage').files?.[0], musicFile=$('#remixMusicFile').files?.[0]
+  const files=[...videoFiles,...(referenceVideoFile?[referenceVideoFile]:[]),...(imageFile?[imageFile]:[]),...(musicFile?[musicFile]:[])]
   if(!files.length) { msg.textContent='请先选择要上传的文件'; return }
   if(files.some(f=>f.size>1024*1024*1024)) { msg.textContent='单个文件不能超过1GB'; return }
   button.disabled=true;button.textContent='上传中…';msg.textContent=''
   try {
     for(const file of files) {
-      const folder=file.type.startsWith('video/')?'videos':file.type.startsWith('audio/')?'music':'references'
+      const folder=file===referenceVideoFile?'references':file.type.startsWith('video/')?'videos':file.type.startsWith('audio/')?'music':'references'
       const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(-120)
       const storagePath=user.id+'/'+folder+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'-'+safeName
       const {error:uploadError}=await supabase.storage.from('publish-media').upload(storagePath,file,{upsert:false,contentType:file.type})
@@ -278,7 +280,7 @@ async function uploadRemixFiles() {
       const result=await response.json()
       if(!response.ok) throw new Error(result.error||'素材登记失败')
     }
-    $('#remixVideoFiles').value='';$('#remixReferenceImage').value='';$('#remixMusicFile').value=''
+    $('#remixVideoFiles').value='';if($('#remixReferenceVideo')) $('#remixReferenceVideo').value='';$('#remixReferenceImage').value='';$('#remixMusicFile').value=''
     msg.textContent='上传成功。'
     await refreshRemixAssets()
   } catch(e) { msg.textContent='上传失败：'+e.message;msg.className='error' }
@@ -293,11 +295,14 @@ async function refreshRemixAssets() {
     const payload=await response.json()
     if(!response.ok) throw new Error(payload.error||'读取素材失败')
     const assets=payload.data||[]
-    const videos=assets.filter(a=>String(a.mime_type).startsWith('video/'))
+    const videos=assets.filter(a=>String(a.mime_type).startsWith('video/') && !String(a.storage_path).includes('/references/'))
+    const referenceVideos=assets.filter(a=>String(a.mime_type).startsWith('video/') && String(a.storage_path).includes('/references/'))
     const audios=assets.filter(a=>String(a.mime_type).startsWith('audio/'))
     const images=assets.filter(a=>String(a.mime_type).startsWith('image/'))
     box.innerHTML=videos.length?videos.map(a=>'<label class="remix-asset"><input type="checkbox" data-remix-asset="'+esc(a.id)+'"><span><b>'+esc(a.file_name)+'</b><small>'+(Number(a.size_bytes)/1024/1024).toFixed(1)+' MB · '+new Date(a.created_at).toLocaleString()+'</small></span></label>').join(''):empty('先上传你自己的视频素材')
     const music=$('#remixMusicChoice'),image=$('#remixImageChoice')
+    const referenceVideo=$('#remixReferenceVideoChoice')
+    if(referenceVideo) referenceVideo.innerHTML='<option value="">不使用已上传参考视频</option>'+referenceVideos.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.file_name)+'</option>').join('')
     music.innerHTML='<option value="auto">AI自动选择音乐库中最匹配的一首</option><option value="">不额外添加音乐，保留原片声音</option>'+audios.map(a=>'<option value="'+esc(a.id)+'">手动指定：'+esc(a.file_name)+'</option>').join('')
     image.innerHTML='<option value="">不使用参考截图</option>'+images.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.file_name)+'</option>').join('')
   } catch(e) { box.innerHTML='<div class="error">'+esc(e.message)+'</div>' }
@@ -310,7 +315,7 @@ async function startRemixJob(event) {
   if(!assetIds.length) { status.textContent='请至少选择一个视频素材'; return }
   button.disabled=true;button.textContent='正在创建任务…';status.textContent='AI 将分析参考信息和素材关键帧，请稍候。'
   try {
-    const response=await apiFetch('/api/video/remix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds,referenceUrl:$('#remixReferenceUrl').value.trim(),referenceNotes:$('#remixReferenceNotes').value.trim(),musicAssetId:$('#remixMusicChoice').value,referenceImageAssetId:$('#remixImageChoice').value})})
+    const response=await apiFetch('/api/video/remix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds,referenceUrl:$('#remixReferenceUrl').value.trim(),referenceNotes:$('#remixReferenceNotes').value.trim(),musicAssetId:$('#remixMusicChoice').value,referenceImageAssetId:$('#remixImageChoice').value,referenceVideoAssetId:$('#remixReferenceVideoChoice')?.value||''})})
     const payload=await response.json()
     if(!response.ok) throw new Error(payload.error||'创建剪辑任务失败')
     status.textContent='任务已开始。后台正在分析镜头并合成视频…'
