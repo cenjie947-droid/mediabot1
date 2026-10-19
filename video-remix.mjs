@@ -23,7 +23,7 @@ async function durationOf(file) {
   const output = await run(ffmpegPath, ['-hide_banner', '-i', file, '-f', 'null', '-']).catch(e => e.message)
   const match = output.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/)
   if (!match) throw new Error('无法读取视频时长，请确认文件是可播放的视频格式')
-  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3])
+  return { duration: Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]), hasAudio: /Audio:/.test(output) }
 }
 
 async function extractFrames(file, duration, assetIndex, dir) {
@@ -77,8 +77,9 @@ export async function createVideoRemix({ admin, userId, referenceUrl = '', refer
       const fileName = path.basename(storagePath).replace(/[^a-zA-Z0-9._-]/g, '_')
       const localPath = path.join(temp, 'input-' + i + '-' + fileName)
       await writeFile(localPath, Buffer.from(await data.arrayBuffer()))
-      const duration = await durationOf(localPath)
-      const asset = { storagePath, fileName, localPath, duration }
+      const mediaInfo = await durationOf(localPath)
+      const duration = mediaInfo.duration
+      const asset = { storagePath, fileName, localPath, duration, hasAudio: mediaInfo.hasAudio }
       assets.push(asset)
       frames.push(...await extractFrames(localPath, duration, i, temp))
     }
@@ -103,7 +104,10 @@ export async function createVideoRemix({ admin, userId, referenceUrl = '', refer
     const rendered = []
     for (let i = 0; i < clips.length; i++) {
       const clip = clips[i], target = path.join(temp, 'clip-' + i + '.mp4')
-      await run(ffmpegPath, ['-y', '-ss', String(clip.start), '-i', clip.localPath, '-t', String(clip.end - clip.start), '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24', '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2', '-avoid_negative_ts', 'make_zero', target])
+      const clipArgs = ['-y', '-ss', String(clip.start), '-i', clip.localPath]
+      if (!assets[clip.assetIndex].hasAudio) clipArgs.push('-f', 'lavfi', '-t', String(clip.end - clip.start), '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100')
+      clipArgs.push('-t', String(clip.end - clip.start), '-map', '0:v:0', '-map', assets[clip.assetIndex].hasAudio ? '0:a:0?' : '1:a:0', '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '24', '-c:a', 'aac', '-b:a', '128k', '-ar', '44100', '-ac', '2', '-avoid_negative_ts', 'make_zero', target)
+      await run(ffmpegPath, clipArgs)
       rendered.push(target)
     }
     const listPath = path.join(temp, 'concat.txt')
