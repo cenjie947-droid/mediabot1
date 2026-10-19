@@ -38,7 +38,7 @@ async function extractFrames(file, duration, assetIndex, dir) {
   return frames
 }
 
-async function planWithAI(referenceUrl, referenceNotes, assets, frames) {
+async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes = null) {
   if (!AI_API_KEY) throw new Error('未配置 AI_API_KEY，无法分析参考爆款和素材镜头')
   const frameMessages = frames.slice(0, 48).map(frame => ({
     type: 'image_url',
@@ -52,7 +52,7 @@ async function planWithAI(referenceUrl, referenceNotes, assets, frames) {
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + AI_API_KEY },
     body: JSON.stringify({
       model: AI_MODEL, temperature: 0.3, response_format: { type: 'json_object' },
-      messages: [{ role: 'system', content: system }, { role: 'user', content: [{ type: 'text', text: userText }, ...frameMessages] }]
+      messages: [{ role: 'system', content: system }, { role: 'user', content: [{ type: 'text', text: userText + (referenceImageBytes ? '\\n第一张图片是用户提供的爆款参考截图，后续图片是用户素材关键帧。' : '\\n图片均为用户素材关键帧。') }, ...(referenceImageBytes ? [{ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + referenceImageBytes.toString('base64'), detail: 'high' } }] : []), ...frameMessages] }]
     })
   })
   const raw = await response.text()
@@ -62,7 +62,7 @@ async function planWithAI(referenceUrl, referenceNotes, assets, frames) {
   return JSON.parse(content)
 }
 
-export async function createVideoRemix({ admin, userId, referenceUrl = '', referenceNotes = '', assetPaths = [], musicPath = '' }) {
+export async function createVideoRemix({ admin, userId, referenceUrl = '', referenceNotes = '', assetPaths = [], musicPath = '', referenceImagePath = '' }) {
   if (!ffmpegPath) throw new Error('当前服务器没有可用的 FFmpeg 视频处理程序')
   if (!Array.isArray(assetPaths) || assetPaths.length < 1 || assetPaths.length > 12) throw new Error('请先选择1到12个自己的视频素材')
   const temp = await mkdtemp(path.join(os.tmpdir(), 'mediabot-remix-'))
@@ -82,7 +82,7 @@ export async function createVideoRemix({ admin, userId, referenceUrl = '', refer
       assets.push(asset)
       frames.push(...await extractFrames(localPath, duration, i, temp))
     }
-    const plan = await planWithAI(referenceUrl, referenceNotes, assets, frames)
+    let referenceImageBytes = null\n    if (referenceImagePath) {\n      if (!String(referenceImagePath).startsWith(userId + '/') || String(referenceImagePath).includes('..')) throw new Error('参考截图路径无效或不属于当前用户')\n      const { data, error } = await admin.storage.from('publish-media').download(referenceImagePath)\n      if (error || !data) throw new Error('无法读取爆款参考截图')\n      referenceImageBytes = Buffer.from(await data.arrayBuffer())\n    }\n    const plan = await planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes)
     const proposed = Array.isArray(plan.clips) ? plan.clips.slice(0, 10) : []
     const clips = proposed.map(c => {
       const assetIndex = Number(c.assetIndex), asset = assets[assetIndex]
