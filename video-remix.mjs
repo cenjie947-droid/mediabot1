@@ -27,7 +27,7 @@ async function durationOf(file) {
 }
 
 async function extractFrames(file, duration, assetIndex, dir) {
-  const count = Math.min(6, Math.max(2, Math.ceil(duration / 12)))
+  const count = Math.min(4, Math.max(2, Math.ceil(duration / 12)))
   const frames = []
   for (let i = 0; i < count; i++) {
     const time = Math.min(Math.max(0.2, duration - 0.2), duration * (i + 0.5) / count)
@@ -45,7 +45,7 @@ async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenc
     image_url: { url: 'data:image/jpeg;base64,' + frame.bytes.toString('base64'), detail: 'low' }
   }))
   const frameLabels = frames.slice(0, 48).map((f, i) => '图片' + (i + (referenceImageBytes ? 2 : 1)) + '=素材' + (f.assetIndex + 1) + '，时间点' + f.timeSeconds + '秒').join('\n')
-  const system = '你是短视频剪辑导演。用户提供的原始素材是唯一可用画面来源，严禁建议生成AI视频或虚构素材。根据参考爆款信息和素材关键帧，返回严格JSON：title, hook, structure, musicMood, targetDuration, clips数组。每个clips元素包含assetIndex(从0开始), startSeconds, endSeconds, purpose。只能选择已提供素材的索引；片段长度2到6秒，时间不能超出素材时长；优先选择视觉明确、动作/情绪鲜明的镜头，按开头吸引点、主体、高潮、结尾排序。若参考链接内容无法直接读取，只能依据用户填写的参考说明，不得声称已观看链接。'
+  const system = '你是短视频剪辑导演。用户提供的原始素材是唯一可用画面来源，严禁建议生成AI视频或虚构素材。根据参考爆款信息和素材关键帧，返回严格JSON：title, hook, structure, musicMood, targetDuration, clips数组。每个clips元素包含assetIndex(从0开始), startSeconds, endSeconds, purpose。只能选择已提供素材的索引；片段长度2到6秒，时间不能超出素材时长；优先选择视觉明确、动作/情绪鲜明的镜头，按开头吸引点、主体、高潮、结尾排序。当前系统不会直接读取链接里的视频画面或声音；链接只作来源记录。必须依据用户提供的截图和说明分析，不得声称已观看链接。'
   const musicText = musicOptions.length ? '配乐候选（索引：文件名）：' + musicOptions.map((m,i)=>i + ': ' + m.fileName).join(' | ') + '。请根据画面情绪和文件名线索选择最合适的配乐，并返回selectedMusicIndex。' : '没有可选配乐。'
   const userText = '参考爆款链接：' + (referenceUrl || '未提供') + '\n用户补充的参考说明：' + (referenceNotes || '未提供') + '\n素材信息：\n' + assets.map((a,i)=>'素材' + (i+1) + '（索引' + i + '）：文件名=' + a.fileName + '，时长=' + a.duration.toFixed(1) + '秒').join('\n') + '\n关键帧标记：\n' + frameLabels + '\n请规划一条约30秒、使用现有素材剪辑的新视频。选择最多10段镜头，总时长控制在15到60秒；只返回JSON。配乐信息：' + musicText
   const response = await fetch(AI_BASE_URL + '/chat/completions', {
