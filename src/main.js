@@ -328,6 +328,7 @@ async function pollRemixJob(id) {
     if(job.status==='completed') {
       const plan=job.edit_plan||{}
       status.innerHTML='<div class="remix-result"><h4>成片已生成：'+esc(plan.title||'自动剪辑视频')+'</h4><p>时长：'+esc(plan.durationSeconds||'-')+' 秒 · '+(plan.musicApplied?'已混入你选择的音乐':'未额外添加音乐')+'</p>'+(plan.hook?'<p>开头思路：'+esc(plan.hook)+'</p>':'')+(job.output_url?'<video controls playsinline src="'+esc(job.output_url)+'"></video><p><a href="'+esc(job.output_url)+'" target="_blank" rel="noopener noreferrer">打开 / 保存成片</a></p>':'<p>成片已保存，但暂时无法生成预览链接。</p>')+'<details><summary>查看剪辑方案</summary><pre>'+esc(JSON.stringify(plan,null,2))+'</pre></details>'+(job.content_id?'<button data-remix-queue="'+esc(job.content_id)+'">加入发布队列</button>':'')+'<p class="muted">'+esc(plan.disclaimer||'')+'</p></div>'
+      status.querySelectorAll('[data-remix-queue]').forEach(b=>b.addEventListener('click',()=>queuePublish(b.dataset.remixQueue)))
       await refreshRecentRemixes()
       return
     }
