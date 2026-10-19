@@ -174,7 +174,7 @@ app.post('/api/video/remix', auth, async (req, res) => {
     if (error || !music || !music.mime_type.startsWith('audio/')) return res.status(400).json({ error: '配乐文件不存在或格式不支持' })
     musicPath = music.storage_path
   }
-  let referenceImagePath = ''\n  if (referenceImageAssetId) {\n    const { data: image, error } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('id', referenceImageAssetId).eq('user_id', req.user.id).maybeSingle()\n    if (error || !image || !image.mime_type.startsWith('image/')) return res.status(400).json({ error: '爆款参考截图不存在或格式不支持' })\n    referenceImagePath = image.storage_path\n  }\n  const { data: job, error: jobError } = await admin.from('video_remix_jobs').insert({
+  let referenceImagePath = ''\n  let referenceImageMime = 'image/jpeg'\n  if (referenceImageAssetId) {\n    const { data: image, error } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('id', referenceImageAssetId).eq('user_id', req.user.id).maybeSingle()\n    if (error || !image || !image.mime_type.startsWith('image/')) return res.status(400).json({ error: '爆款参考截图不存在或格式不支持' })\n    referenceImagePath = image.storage_path\n    referenceImageMime = image.mime_type\n  }\n  const { data: job, error: jobError } = await admin.from('video_remix_jobs').insert({
     user_id: req.user.id, reference_url: referenceUrl || null, reference_notes: referenceNotes || null,
     input_asset_ids: assetIds, music_storage_path: musicPath || null, status: 'analyzing'
   }).select().single()
@@ -183,7 +183,7 @@ app.post('/api/video/remix', auth, async (req, res) => {
   ;(async () => {
     try {
       const { createVideoRemix } = await import('./video-remix.mjs')
-      const result = await createVideoRemix({ admin, userId: req.user.id, referenceUrl, referenceNotes, assetPaths: videoRows.map(a => a.storage_path), musicPath, referenceImagePath })
+      const result = await createVideoRemix({ admin, userId: req.user.id, referenceUrl, referenceNotes, assetPaths: videoRows.map(a => a.storage_path), musicPath, referenceImagePath, referenceImageMime })
       const { data: content, error: contentError } = await admin.from('content_items').insert({ user_id: req.user.id, title: result.editPlan.title, body: [result.editPlan.hook, result.editPlan.structure].filter(Boolean).join('\n\n'), platform: 'douyin', status: 'draft', media_urls: [result.outputPath] }).select('id').single()
       if (contentError) throw new Error('成片已生成，但写入内容库失败：' + contentError.message)
       await admin.from('video_remix_jobs').update({ status: 'completed', output_storage_path: result.outputPath, edit_plan: result.editPlan, content_id: content.id, completed_at: new Date().toISOString(), error_message: null }).eq('id', job.id).eq('user_id', req.user.id)
