@@ -165,6 +165,7 @@ app.post('/api/video/remix', auth, async (req, res) => {
   const referenceNotes = String(req.body?.referenceNotes || '').slice(0, 5000)
   const musicAssetId = String(req.body?.musicAssetId || '')
   const referenceImageAssetId = String(req.body?.referenceImageAssetId || '')
+  const referenceVideoAssetId = String(req.body?.referenceVideoAssetId || '')
   const admin = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } })
   const { data: assets, error: assetsError } = await admin.from('video_assets').select('id,storage_path,file_name').eq('user_id', req.user.id).in('id', assetIds)
   if (assetsError) return res.status(500).json({ error: assetsError.message })
