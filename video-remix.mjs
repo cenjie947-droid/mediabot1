@@ -38,14 +38,14 @@ async function extractFrames(file, duration, assetIndex, dir) {
   return frames
 }
 
-async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes = null, referenceImageMime = 'image/jpeg', musicOptions = []) {
+async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes = null, referenceImageMime = 'image/jpeg', musicOptions = [], referenceVideoFrames = [], referenceTranscript = '') {
   if (!AI_API_KEY) throw new Error('未配置 AI_API_KEY，无法分析参考爆款和素材镜头')
-  const frameMessages = frames.slice(0, 48).map(frame => ({
+  const allFrames = [...referenceVideoFrames.map(frame => ({ ...frame, isReference: true })), ...frames].slice(0, 48)\n  const frameMessages = allFrames.map(frame => ({
     type: 'image_url',
     image_url: { url: 'data:image/jpeg;base64,' + frame.bytes.toString('base64'), detail: 'low' }
   }))
   const frameLabels = frames.slice(0, 48).map((f, i) => '图片' + (i + (referenceImageBytes ? 2 : 1)) + '=素材' + (f.assetIndex + 1) + '，时间点' + f.timeSeconds + '秒').join('\n')
-  const system = '你是短视频剪辑导演。用户提供的原始素材是唯一可用画面来源，严禁建议生成AI视频或虚构素材。根据参考爆款信息和素材关键帧，返回严格JSON：title, hook, structure, musicMood, targetDuration, clips数组。每个clips元素包含assetIndex(从0开始), startSeconds, endSeconds, purpose。只能选择已提供素材的索引；片段长度2到6秒，时间不能超出素材时长；优先选择视觉明确、动作/情绪鲜明的镜头，按开头吸引点、主体、高潮、结尾排序。当前系统不会直接读取链接里的视频画面或声音；链接只作来源记录。必须依据用户提供的截图和说明分析，不得声称已观看链接。'
+  const system = '你是短视频剪辑导演。用户提供的原始素材是唯一可用画面来源，严禁建议生成AI视频或虚构素材。根据参考爆款信息和素材关键帧，返回严格JSON：title, hook, structure, musicMood, targetDuration, clips数组。每个clips元素包含assetIndex(从0开始), startSeconds, endSeconds, purpose。只能选择已提供素材的索引；片段长度2到6秒，时间不能超出素材时长；优先选择视觉明确、动作/情绪鲜明的镜头，按开头吸引点、主体、高潮、结尾排序。如果提供了参考视频关键帧和语音转写，必须综合分析画面、台词、节奏与情绪；仅提供链接时不得声称已观看链接。'
   const musicText = musicOptions.length ? '配乐候选（索引：文件名）：' + musicOptions.map((m,i)=>i + ': ' + m.fileName).join(' | ') + '。请根据画面情绪和文件名线索选择最合适的配乐，并返回selectedMusicIndex。' : '没有可选配乐。'
   const userText = '参考爆款链接：' + (referenceUrl || '未提供') + '\n用户补充的参考说明：' + (referenceNotes || '未提供') + '\n素材信息：\n' + assets.map((a,i)=>'素材' + (i+1) + '（索引' + i + '）：文件名=' + a.fileName + '，时长=' + a.duration.toFixed(1) + '秒').join('\n') + '\n关键帧标记：\n' + frameLabels + '\n请规划一条约30秒、使用现有素材剪辑的新视频。选择最多10段镜头，总时长控制在15到60秒；只返回JSON。配乐信息：' + musicText
   const response = await fetch(AI_BASE_URL + '/chat/completions', {
@@ -63,7 +63,7 @@ async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenc
   return JSON.parse(content)
 }
 
-export async function createVideoRemix({ admin, userId, referenceUrl = '', referenceNotes = '', assetPaths = [], musicPath = '', referenceImagePath = '', referenceImageMime = 'image/jpeg', musicOptions = [] }) {
+export async function createVideoRemix({ admin, userId, referenceUrl = '', referenceNotes = '', assetPaths = [], musicPath = '', referenceImagePath = '', referenceImageMime = 'image/jpeg', referenceVideoPath = '', musicOptions = [] }) {
   if (!ffmpegPath) throw new Error('当前服务器没有可用的 FFmpeg 视频处理程序')
   if (!Array.isArray(assetPaths) || assetPaths.length < 1 || assetPaths.length > 12) throw new Error('请先选择1到12个自己的视频素材')
   const temp = await mkdtemp(path.join(os.tmpdir(), 'mediabot-remix-'))
@@ -91,7 +91,7 @@ export async function createVideoRemix({ admin, userId, referenceUrl = '', refer
       if (error || !data) throw new Error('无法读取爆款参考截图')
       referenceImageBytes = Buffer.from(await data.arrayBuffer())
     }
-    const plan = await planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes, referenceImageMime, musicOptions)
+    const plan = await planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes, referenceImageMime, musicOptions, referenceVideoFrames, referenceTranscript)
     const proposed = Array.isArray(plan.clips) ? plan.clips.slice(0, 10) : []
     const clips = proposed.map(c => {
       const assetIndex = Number(c.assetIndex), asset = assets[assetIndex]
@@ -143,7 +143,7 @@ export async function createVideoRemix({ admin, userId, referenceUrl = '', refer
         durationSeconds: Number(clips.reduce((n,c)=>n+c.end-c.start,0).toFixed(1)),
         musicApplied: Boolean(chosenMusicPath),
         selectedMusicName: chosenMusicName,
-        disclaimer: '这是基于抽样关键帧的自动剪辑初版，建议发布前检查镜头连续性、声音和版权。参考链接若未提供可访问视频文件，AI只依据你填写的说明分析。'
+        referenceAnalyzed: Boolean(referenceVideoPath || referenceImageBytes), referenceTranscriptAvailable: Boolean(referenceTranscript), disclaimer: 'AI已结合可用的参考画面与语音转写（如有）以及自有素材关键帧规划剪辑。仅粘贴链接但未上传参考视频时，系统无法保证读取链接内容。发布前请检查成片和素材授权。'
       }
     }
   } finally {
