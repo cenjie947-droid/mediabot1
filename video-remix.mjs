@@ -54,7 +54,7 @@ async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenc
     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + AI_API_KEY },
     body: JSON.stringify({
       model: AI_MODEL, temperature: 0.3, response_format: { type: 'json_object' },
-      messages: [{ role: 'system', content: system }, { role: 'user', content: [{ type: 'text', text: userText + (referenceImageBytes ? '\n第一张图片是用户提供的爆款参考截图，后续图片是用户素材关键帧。' : '\n图片均为用户素材关键帧。') }, ...(referenceImageBytes ? [{ type: 'image_url', image_url: { url: 'data:' + referenceImageMime + ';base64,' + referenceImageBytes.toString('base64'), detail: 'high' } }] : []), ...frameMessages] }]
+      messages: [{ role: 'system', content: system }, { role: 'user', content: [{ type: 'text', text: userText + (referenceImageBytes ? '\n第一张图片是爆款参考截图。' : '') + (referenceVideoFrames.length ? '\n随后包含爆款参考视频关键帧，其余图片是自有素材关键帧。' : '\n图片均为自有素材关键帧。') }, ...(referenceImageBytes ? [{ type: 'image_url', image_url: { url: 'data:' + referenceImageMime + ';base64,' + referenceImageBytes.toString('base64'), detail: 'high' } }] : []), ...frameMessages] }]
     })
   })
   const raw = await response.text()
