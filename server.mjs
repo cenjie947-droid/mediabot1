@@ -51,6 +51,84 @@ function userClient(token) {
   return createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } })
 }
 
+
+const radarCategories = ['全部赛道','伤感','搞笑','情感','美食','美女','汽车','宠物','知识','影视','游戏','财经','其他']
+app.get('/api/radar/snapshots', auth, async (req, res) => {
+  try {
+    const db = userClient(req.userToken)
+    const days = Math.max(1, Math.min(30, Number(req.query.days) || 7))
+    const since = new Date(Date.now() - days * 86400000).toISOString()
+    let q = db.from('radar_video_snapshots').select('*').gte('snapshot_at', since).order('snapshot_at', { ascending: false }).limit(500)
+    if (req.query.category && req.query.category !== '全部赛道') q = q.eq('category', String(req.query.category).slice(0, 40))
+    const { data, error } = await q
+    if (error) return res.status(500).json({ error: error.message })
+    const byVideo = new Map()
+    for (const row of data || []) {
+      if (!byVideo.has(row.video_key)) byVideo.set(row.video_key, [])
+      byVideo.get(row.video_key).push(row)
+    }
+    const videos = [...byVideo.values()].map(rows => {
+      const latest = rows[0]
+      const previous = rows.find(r => new Date(r.snapshot_at) < new Date(latest.snapshot_at))
+      const hours = previous ? Math.max((new Date(latest.snapshot_at) - new Date(previous.snapshot_at)) / 3600000, 0.01) : 0
+      const delta = previous ? Math.max(0, Number(latest.views || 0) - Number(previous.views || 0)) : null
+      return { ...latest, snapshots: rows.length, previousViews: previous ? Number(previous.views || 0) : null, viewGrowth: delta, hourlyViewGrowth: hours ? delta / hours : null, growthPercent: previous && Number(previous.views) > 0 ? (delta / Number(previous.views)) * 100 : null }
+    })
+    const categories = new Map()
+    for (const v of videos) {
+      const c = categories.get(v.category) || { category: v.category, sampledVideos: 0, views: 0, likes: 0, comments: 0, shares: 0, favorites: 0, hourlyViewGrowth: 0, trackedVideos: 0 }
+      c.sampledVideos++; for (const k of ['views','likes','comments','shares','favorites']) c[k] += Number(v[k] || 0)
+      if (v.hourlyViewGrowth !== null) { c.hourlyViewGrowth += v.hourlyViewGrowth; c.trackedVideos++ }
+      categories.set(v.category, c)
+    }
+    const categoryRows = [...categories.values()].map(c => ({ ...c, hourlyViewGrowth: c.trackedVideos ? Math.round(c.hourlyViewGrowth) : null })).sort((a,b) => (b.hourlyViewGrowth ?? -1) - (a.hourlyViewGrowth ?? -1))
+    res.json({ days, videos, categories: categoryRows, sampledVideos: videos.length, disclaimer: '仅统计你已录入的样本，不代表抖音全平台数据。增长速度只根据同一视频的历史快照计算。' })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+app.post('/api/radar/snapshots', auth, async (req, res) => {
+  try {
+    const b = req.body || {}
+    const videoUrl = String(b.videoUrl || '').trim()
+    const title = String(b.title || '').trim()
+    const category = String(b.category || '').trim()
+    if (!videoUrl || !title || !category) return res.status(400).json({ error: '视频链接、标题和赛道为必填项' })
+    let parsed
+    try { parsed = new URL(videoUrl) } catch { return res.status(400).json({ error: '视频链接格式不正确' }) }
+    if (!['http:','https:'].includes(parsed.protocol)) return res.status(400).json({ error: '仅支持 http/https 链接' })
+    const num = (v, key) => {
+      if (v === '' || v === null || v === undefined) return 0
+      const n = Number(v)
+      if (!Number.isFinite(n) || n < 0 || n > 9000000000000000) throw new Error(key + ' 必须是非负数字')
+      return Math.floor(n)
+    }
+    let metrics
+    try { metrics = { views:num(b.views,'播放量'), likes:num(b.likes,'点赞量'), comments:num(b.comments,'评论量'), shares:num(b.shares,'转发量'), favorites:num(b.favorites,'收藏量') } }
+    catch (e) { return res.status(400).json({ error: e.message }) }
+    const videoKey = String(b.videoKey || parsed.pathname || videoUrl).slice(0, 300)
+    const db = userClient(req.userToken)
+    const row = { user_id:req.user.id, video_key:videoKey, video_url:videoUrl, title:title.slice(0,300), creator_name:String(b.creatorName || '').slice(0,160) || null, category:category.slice(0,40), platform:'douyin', published_at:b.publishedAt ? new Date(b.publishedAt).toISOString() : null, snapshot_at:new Date().toISOString(), ...metrics, avg_watch_seconds:b.avgWatchSeconds === '' || b.avgWatchSeconds == null ? null : Number(b.avgWatchSeconds), completion_rate:b.completionRate === '' || b.completionRate == null ? null : Number(b.completionRate), retention_3s:b.retention3s === '' || b.retention3s == null ? null : Number(b.retention3s), retention_5s:b.retention5s === '' || b.retention5s == null ? null : Number(b.retention5s), retention_10s:b.retention10s === '' || b.retention10s == null ? null : Number(b.retention10s), source_type:'manual', notes:String(b.notes || '').slice(0,1000) || null }
+    for (const key of ['completion_rate','retention_3s','retention_5s','retention_10s']) if (row[key] !== null && (!Number.isFinite(row[key]) || row[key] < 0 || row[key] > 100)) return res.status(400).json({ error: key + ' 必须在 0 到 100 之间' })
+    if (row.avg_watch_seconds !== null && (!Number.isFinite(row.avg_watch_seconds) || row.avg_watch_seconds < 0)) return res.status(400).json({ error: '平均观看时长必须是非负数字' })
+    const { data, error } = await db.from('radar_video_snapshots').insert(row).select().single()
+    if (error) return res.status(500).json({ error: error.message })
+    res.status(201).json({ data })
+  } catch (e) { res.status(400).json({ error: e.message || '录入失败' }) }
+})
+app.get('/api/radar/preferences', auth, async (req, res) => {
+  const db = userClient(req.userToken)
+  const { data, error } = await db.from('radar_preferences').select('*').eq('user_id', req.user.id).maybeSingle()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ data: data || { watched_categories: ['伤感','情感'], production_mode: 'market' } })
+})
+app.put('/api/radar/preferences', auth, async (req, res) => {
+  const categories = Array.isArray(req.body?.watchedCategories) ? req.body.watchedCategories.filter(x => radarCategories.includes(x) && x !== '全部赛道').slice(0, 13) : []
+  const mode = req.body?.productionMode === 'vertical' ? 'vertical' : 'market'
+  const db = userClient(req.userToken)
+  const { data, error } = await db.from('radar_preferences').upsert({ user_id:req.user.id, watched_categories:categories, production_mode:mode, updated_at:new Date().toISOString() }, { onConflict:'user_id' }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ data })
+})
+
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'mediabot-api', version: '0.7.0', supabaseConfigured: Boolean(SUPABASE_URL && SUPABASE_KEY), secretConfigured: Boolean(SUPABASE_SECRET_KEY), aiConfigured: Boolean(AI_API_KEY), publicAppConfigured: Boolean(PUBLIC_APP_URL), douyinConfigured: Boolean(DOUYIN_CLIENT_KEY && DOUYIN_CLIENT_SECRET), xiaohongshuConfigured: Boolean(XHS_CLIENT_ID && XHS_CLIENT_SECRET) }))
 
 app.post('/api/automation/run-now', auth, async (req, res) => {
