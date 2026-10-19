@@ -18,7 +18,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 
 const pages = [
   ['dashboard', 'Dashboard'],
-  ['hot', '热点中心'],
+  ['hot', '爆款雷达'],
   ['create', 'AI 写文案'],
   ['library', '内容库'],
   ['schedule', '发布计划'],
@@ -29,7 +29,9 @@ const pages = [
 
 let user = null
 let active = 'dashboard'
-let data = { hot: [], content: [], tasks: [], logs: [], accounts: [] }
+let data = { hot: [], content: [], tasks: [], logs: [], accounts: [], radar: [], radarPrefs: { watched_categories: ['伤感','情感'], production_mode: 'market' } }
+let radarCategory = '全部赛道'
+const radarCategories = ['伤感','搞笑','情感','美食','美女','汽车','宠物','知识','影视','游戏','财经','其他']
 
 const $ = (selector) => document.querySelector(selector)
 const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (m) => ({
@@ -116,16 +118,15 @@ async function load() {
     supabase.from('content_items').select('*').order('created_at', { ascending: false }).limit(30),
     supabase.from('scheduled_tasks').select('*').order('created_at', { ascending: false }),
     supabase.from('run_logs').select('*').order('created_at', { ascending: false }).limit(30),
-    supabase.from('social_accounts').select('*').order('created_at', { ascending: false })
+    supabase.from('social_accounts').select('*').order('created_at', { ascending: false }),
+    supabase.from('radar_video_snapshots').select('*').order('snapshot_at', { ascending: false }).limit(500),
+    supabase.from('radar_preferences').select('*').maybeSingle()
   ])
   const failed = results.find((x) => x.error)
   if (failed?.error) throw failed.error
   data = {
-    hot: results[0].data || [],
-    content: results[1].data || [],
-    tasks: results[2].data || [],
-    logs: results[3].data || [],
-    accounts: results[4].data || []
+    hot: results[0].data || [], content: results[1].data || [], tasks: results[2].data || [], logs: results[3].data || [], accounts: results[4].data || [],
+    radar: results[5].data || [], radarPrefs: results[6].data || { watched_categories: ['伤感','情感'], production_mode: 'market' }
   }
   render()
 }
@@ -146,21 +147,7 @@ function render() {
       ${card('高分热点', data.hot.slice(0, 5).map((x) => `<div class="row"><div><b>${esc(x.title)}</b><small>${esc(x.source || '')}</small></div><strong>${x.ai_score ?? '-'}</strong></div>`).join('') || empty('暂无热点'))}`
     $('#newContentBtn').addEventListener('click', goCreate)
   } else if (active === 'hot') {
-    view.innerHTML = card('🔥 真实热点中心', `
-      <div class="toolbar"><button id="fetchHotBtn">🌐 抓取真实热点</button><button id="scoreHotBtn" class="secondary">✨ AI 评分未评分热点</button><button id="demoHotBtn" class="secondary">写入示例</button></div>
-      <p class="muted">默认热点源：Google News RSS（AI / 短视频 / 电商 / 科技）。你也可以在 Render 配置 HOT_FEEDS 自定义 RSS/Atom。</p>
-      <div class="hot-grid">${data.hot.map((x) => `
-        <div class="hot-card">
-          <div class="hot-head"><b>${esc(x.title)}</b><span class="score">${x.ai_score ?? '-'}</span></div>
-          <small>${esc(x.source || '')} · 热度 ${x.heat_score ?? '-'} · ${x.discovered_at ? new Date(x.discovered_at).toLocaleString() : ''}</small>
-          <p>${esc(x.recommendation || '等待 AI 评分')}</p>
-          <div class="mini-actions"><button data-generate-topic="${esc(x.title)}">生成内容</button></div>
-        </div>`).join('') || empty('暂无热点，点击“抓取真实热点”')}
-      </div>`)
-    $('#fetchHotBtn').addEventListener('click', fetchRealHot)
-    $('#scoreHotBtn').addEventListener('click', scoreHot)
-    $('#demoHotBtn').addEventListener('click', addDemoHot)
-    document.querySelectorAll('[data-generate-topic]').forEach((button) => { button.addEventListener('click', () => generateHot(button.dataset.generateTopic)) })
+    renderRadar(view)
   } else if (active === 'create') {
     view.innerHTML = card('AI 自动写文案', `
       <form id="contentForm" class="form">
@@ -196,6 +183,67 @@ function render() {
   }
 
   bindForms()
+}
+
+
+function renderRadar(view) {
+  const byVideo = new Map()
+  for (const row of data.radar) {
+    if (!byVideo.has(row.video_key)) byVideo.set(row.video_key, [])
+    byVideo.get(row.video_key).push(row)
+  }
+  const videos = [...byVideo.values()].map(rows => {
+    const latest=rows[0], previous=rows.find(r=>new Date(r.snapshot_at)<new Date(latest.snapshot_at))
+    const hours=previous?Math.max((new Date(latest.snapshot_at)-new Date(previous.snapshot_at))/3600000,0.01):0
+    return {...latest, historyCount:rows.length, previous, hourly:previous?Math.max(0,(Number(latest.views||0)-Number(previous.views||0))/hours):null}
+  }).filter(v=>radarCategory==='全部赛道'||v.category===radarCategory)
+  const stats=new Map()
+  videos.forEach(v=>{
+    const c=stats.get(v.category)||{category:v.category,count:0,views:0,likes:0,comments:0,shares:0,hourly:0,tracked:0}
+    c.count++; ['views','likes','comments','shares'].forEach(k=>c[k]+=Number(v[k]||0))
+    if(v.hourly!==null){c.hourly+=v.hourly;c.tracked++} stats.set(v.category,c)
+  })
+  const ranked=[...stats.values()].sort((a,b)=>(b.tracked?b.hourly/b.tracked:-1)-(a.tracked?a.hourly/a.tracked:-1))
+  const n=v=>Number(v||0).toLocaleString('zh-CN')
+  const selected=data.radarPrefs.watched_categories||['伤感','情感']
+  const mode=data.radarPrefs.production_mode||'market'
+  const top=(mode==='vertical'?ranked.filter(c=>selected.includes(c.category)):ranked)[0]
+  view.innerHTML = '<div class="radar-hero"><div><span class="eyebrow">MEDIABOT · MARKET RADAR</span><h1>🔥 爆款市场雷达</h1><p>先看市场正在升温什么，再决定今天生产什么。</p></div><div class="radar-hero-tag">手动数据模式</div></div>' +
+    '<div class="notice">暂未接入抖音官方热点数据。数字只来自你手动录入的公开视频样本，不代表全平台总量；没有来源的数据不会被伪造。</div>' +
+    '<div class="radar-stats"><div class="radar-stat"><span>视频样本</span><b>'+n(videos.length)+'</b></div><div class="radar-stat"><span>样本累计播放</span><b>'+n(videos.reduce((a,v)=>a+Number(v.views||0),0))+'</b></div><div class="radar-stat"><span>可计算增速</span><b>'+n(videos.filter(v=>v.hourly!==null).length)+'</b></div><div class="radar-stat"><span>关注赛道</span><b>'+n(selected.length)+'</b></div></div>' +
+    '<div class="card"><h3>🎯 关注赛道与生产模式</h3><p class="muted">关注赛道表示你想观察什么，不等于系统必须生产什么。</p><div class="radar-checks">'+radarCategories.map(c=>'<label><input type="checkbox" data-watch-category="'+esc(c)+'" '+(selected.includes(c)?'checked':'')+'> '+esc(c)+'</label>').join('')+'</div><div class="toolbar radar-mode"><label>生产模式 <select id="radarMode"><option value="market" '+(mode==='market'?'selected':'')+'>🚀 爆款跟随模式</option><option value="vertical" '+(mode==='vertical'?'selected':'')+'>🎯 账号垂直模式</option></select></label><button id="saveRadarPrefs">保存偏好</button></div><div class="recommendation"><b>当前样本建议</b><p>'+(top?'增长较快的样本赛道：<strong>'+esc(top.category)+'</strong>':'样本不足。录入视频后，隔一段时间再次记录同一视频的播放量，才能判断增速。')+'</p><small>建议只基于已录入样本，不代表全平台排名。</small></div></div>' +
+    '<div class="card"><h3>📈 赛道趋势（样本数据）</h3><div class="toolbar"><label>筛选赛道 <select id="radarCategory">'+['全部赛道',...radarCategories].map(c=>'<option '+(radarCategory===c?'selected':'')+'>'+esc(c)+'</option>').join('')+'</select></label><span class="muted">增长速度根据同一视频的历史快照计算</span></div><div class="table-wrap"><table class="radar-table"><thead><tr><th>赛道</th><th>样本数</th><th>播放</th><th>点赞</th><th>评论</th><th>转发</th><th>平均每小时增播</th></tr></thead><tbody>'+ranked.filter(c=>radarCategory==='全部赛道'||c.category===radarCategory).map(c=>'<tr><td><b>'+esc(c.category)+'</b></td><td>'+n(c.count)+'</td><td>'+n(c.views)+'</td><td>'+n(c.likes)+'</td><td>'+n(c.comments)+'</td><td>'+n(c.shares)+'</td><td>'+(c.tracked?n(Math.round(c.hourly/c.tracked)):'等待第二次记录')+'</td></tr>').join('')+'<tr></tr></tbody></table></div></div>' +
+    '<div class="card"><h3>＋ 录入爆款视频 / 更新数据快照</h3><p class="muted">同一条视频重复录入时，请保持链接一致。每次录入都会保存新快照。完播率和留存率仅在真实获得时填写。</p><form id="radarForm" class="form radar-form"><div class="radar-form-grid">'+
+    '<label>视频链接 *<input id="rvUrl" type="url" required placeholder="https://..."></label><label>视频标题 *<input id="rvTitle" required placeholder="填写视频标题"></label><label>内容赛道 *<select id="rvCategory">'+radarCategories.map(c=>'<option>'+esc(c)+'</option>').join('')+'</select></label><label>作者名称<input id="rvCreator" placeholder="可选"></label><label>发布时间<input id="rvPublished" type="datetime-local"></label><label>播放量 *<input id="rvViews" type="number" min="0" value="0" required></label><label>点赞量<input id="rvLikes" type="number" min="0" value="0"></label><label>评论量<input id="rvComments" type="number" min="0" value="0"></label><label>转发量<input id="rvShares" type="number" min="0" value="0"></label><label>收藏量<input id="rvFavorites" type="number" min="0" value="0"></label></div><details><summary>可选：账号后台观看数据</summary><div class="radar-form-grid extra-fields"><label>平均观看时长（秒）<input id="rvAvgWatch" type="number" min="0" step="0.1"></label><label>完播率（%）<input id="rvCompletion" type="number" min="0" max="100" step="0.1"></label><label>3秒留存率（%）<input id="rvRetention3" type="number" min="0" max="100" step="0.1"></label><label>5秒留存率（%）<input id="rvRetention5" type="number" min="0" max="100" step="0.1"></label><label>10秒留存率（%）<input id="rvRetention10" type="number" min="0" max="100" step="0.1"></label></div></details><label>备注<textarea id="rvNotes" rows="2" placeholder="数据来源或视频特点（可选）"></textarea></label><button id="saveRadarVideo" type="submit">保存本次快照</button><div id="radarFormMsg" role="status"></div></form></div>' +
+    '<div class="card"><h3>🎬 已录入视频</h3><div class="table-wrap"><table class="radar-table"><thead><tr><th>视频 / 赛道</th><th>播放</th><th>点赞</th><th>发布时间</th><th>样本增速</th><th>记录次数</th><th>最后记录</th></tr></thead><tbody>'+videos.map(v=>'<tr><td><a href="'+esc(v.video_url)+'" target="_blank" rel="noopener noreferrer">'+esc(v.title)+'</a><small>'+esc(v.category)+' · '+esc(v.creator_name||'作者未填')+'</small></td><td>'+n(v.views)+'</td><td>'+n(v.likes)+'</td><td>'+(v.published_at?new Date(v.published_at).toLocaleString():'未填写')+'</td><td>'+(v.hourly===null?'等待第二次记录':n(Math.round(v.hourly))+'/小时')+'</td><td>'+v.historyCount+'</td><td>'+new Date(v.snapshot_at).toLocaleString()+'</td></tr>').join('')+'<tr></tr></tbody></table></div></div>'
+  $('#radarCategory').addEventListener('change',e=>{radarCategory=e.target.value;render()})
+  $('#saveRadarPrefs').addEventListener('click',saveRadarPreferences)
+  $('#radarForm').addEventListener('submit',saveRadarSnapshot)
+}
+
+async function saveRadarPreferences() {
+  try {
+    const watchedCategories=[...document.querySelectorAll('[data-watch-category]:checked')].map(x=>x.dataset.watchCategory)
+    const {error}=await supabase.from('radar_preferences').upsert({user_id:user.id,watched_categories:watchedCategories,production_mode:$('#radarMode').value,updated_at:new Date().toISOString()},{onConflict:'user_id'})
+    if(error) throw error
+    await load(); alert('雷达偏好已保存')
+  } catch(e) { alert('保存失败：'+e.message) }
+}
+
+async function saveRadarSnapshot(event) {
+  event.preventDefault()
+  const button=$('#saveRadarVideo'),msg=$('#radarFormMsg'),val=id=>$('#'+id)?.value??''
+  button.disabled=true;button.textContent='保存中…';msg.textContent=''
+  try {
+    const payload={videoUrl:val('rvUrl').trim(),title:val('rvTitle').trim(),category:val('rvCategory'),creatorName:val('rvCreator').trim(),publishedAt:val('rvPublished')?new Date(val('rvPublished')).toISOString():null,views:val('rvViews'),likes:val('rvLikes'),comments:val('rvComments'),shares:val('rvShares'),favorites:val('rvFavorites'),avgWatchSeconds:val('rvAvgWatch'),completionRate:val('rvCompletion'),retention3s:val('rvRetention3'),retention5s:val('rvRetention5'),retention10s:val('rvRetention10'),notes:val('rvNotes')}
+    const response=await apiFetch('/api/radar/snapshots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+    const result=await response.json()
+    if(!response.ok) throw new Error(result.error||'保存失败')
+    msg.textContent='已保存。稍后再次录入同一视频，即可计算增速。'
+    $('#radarForm').reset()
+    await load()
+  } catch(e) { msg.textContent='保存失败：'+e.message;msg.className='error' }
+  finally { button.disabled=false;button.textContent='保存本次快照' }
 }
 
 function bindForms() {
