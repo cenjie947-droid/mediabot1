@@ -262,13 +262,14 @@ async function renderRemixLab(view) {
   await refreshRecentRemixes()
 }
 
-async function uploadRemixFiles() {
+async function uploadRemixFiles({ quiet = false } = {}) {
   const button=$('#uploadRemixFiles'),msg=$('#remixUploadMsg')
+  const uploaded={videoIds:[],referenceVideoId:'',imageId:'',musicId:''}
   const videoFiles=[...($('#remixVideoFiles').files||[])], referenceVideoFile=$('#remixReferenceVideo')?.files?.[0], imageFile=$('#remixReferenceImage').files?.[0], musicFile=$('#remixMusicFile').files?.[0]
   const files=[...videoFiles,...(referenceVideoFile?[referenceVideoFile]:[]),...(imageFile?[imageFile]:[]),...(musicFile?[musicFile]:[])]
-  if(!files.length) { msg.textContent='请先选择要上传的文件'; return }
-  if(files.some(f=>f.size>1024*1024*1024)) { msg.textContent='单个文件不能超过1GB'; return }
-  button.disabled=true;button.textContent='上传中…';msg.textContent=''
+  if(!files.length) { if(!quiet) msg.textContent='没有新文件，将使用已上传的素材'; return uploaded }
+  if(files.some(f=>f.size>1024*1024*1024)) throw new Error('单个文件不能超过1GB')
+  if(button) {button.disabled=true;button.textContent='上传中…'} msg.textContent=''
   try {
     for(const file of files) {
       const folder=file===referenceVideoFile?'references':file.type.startsWith('video/')?'videos':file.type.startsWith('audio/')?'music':'references'
@@ -279,12 +280,18 @@ async function uploadRemixFiles() {
       const response=await apiFetch('/api/video/assets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({storagePath,fileName:file.name,mimeType:file.type,sizeBytes:file.size})})
       const result=await response.json()
       if(!response.ok) throw new Error(result.error||'素材登记失败')
+      const id=result.data?.id
+      if(file===referenceVideoFile) uploaded.referenceVideoId=id||''
+      else if(videoFiles.includes(file)) {if(id) uploaded.videoIds.push(id)}
+      else if(file===imageFile) uploaded.imageId=id||''
+      else if(file===musicFile) uploaded.musicId=id||''
     }
     $('#remixVideoFiles').value='';if($('#remixReferenceVideo')) $('#remixReferenceVideo').value='';$('#remixReferenceImage').value='';$('#remixMusicFile').value=''
     msg.textContent='上传成功。'
     await refreshRemixAssets()
-  } catch(e) { msg.textContent='上传失败：'+e.message;msg.className='error' }
-  finally { button.disabled=false;button.textContent='上传所选文件' }
+    return uploaded
+  } catch(e) { msg.textContent='上传失败：'+e.message;msg.className='error'; if(quiet) throw e }
+  finally { if(button) {button.disabled=false;button.textContent='上传所选文件'} }
 }
 
 async function refreshRemixAssets() {
@@ -311,11 +318,14 @@ async function refreshRemixAssets() {
 async function startRemixJob(event) {
   event.preventDefault()
   const button=$('#startRemixBtn'),status=$('#remixJobStatus')
-  const assetIds=[...document.querySelectorAll('[data-remix-asset]:checked')].map(x=>x.dataset.remixAsset)
-  if(!assetIds.length) { status.textContent='请至少选择一个视频素材'; return }
-  button.disabled=true;button.textContent='正在创建任务…';status.textContent='AI 将分析参考信息和素材关键帧，请稍候。'
+  button.disabled=true;button.textContent='上传素材并开始分析…';status.textContent='正在准备素材，然后自动分析画面、规划剪辑并生成成片。'
   try {
-    const response=await apiFetch('/api/video/remix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds,referenceUrl:$('#remixReferenceUrl').value.trim(),referenceNotes:$('#remixReferenceNotes').value.trim(),musicAssetId:$('#remixMusicChoice').value,referenceImageAssetId:$('#remixImageChoice').value,referenceVideoAssetId:$('#remixReferenceVideoChoice')?.value||''})})
+    const uploaded=await uploadRemixFiles({quiet:true})
+    const assetIds=uploaded.videoIds.length?uploaded.videoIds:[...document.querySelectorAll('[data-remix-asset]:checked')].map(x=>x.dataset.remixAsset)
+    if(!assetIds.length) throw new Error('请先选择或上传至少一个自己的视频素材')
+    const category=$('#remixCategory')?.value||'其他'
+    const notes='内容分类：'+category+'。'+($('#remixReferenceNotes').value.trim()||'')
+    const response=await apiFetch('/api/video/remix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds,referenceUrl:$('#remixReferenceUrl').value.trim(),referenceNotes:notes,musicAssetId:uploaded.musicId||$('#remixMusicChoice').value,referenceImageAssetId:uploaded.imageId||$('#remixImageChoice').value,referenceVideoAssetId:uploaded.referenceVideoId||$('#remixReferenceVideoChoice')?.value||''})})
     const payload=await response.json()
     if(!response.ok) throw new Error(payload.error||'创建剪辑任务失败')
     status.textContent='任务已开始。后台正在分析镜头并合成视频…'
