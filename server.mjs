@@ -145,7 +145,7 @@ app.post('/api/video/assets', auth, async (req, res) => {
   const mimeType = String(b.mimeType || '')
   const sizeBytes = Number(b.sizeBytes || 0)
   if (!storagePath.startsWith(req.user.id + '/') || storagePath.includes('..')) return res.status(400).json({ error: '素材路径无效' })
-  if (!fileName || !mimeType.startsWith('video/')) return res.status(400).json({ error: '请上传视频文件' })
+  if (!fileName || !['video/','audio/','image/'].some(prefix => mimeType.startsWith(prefix))) return res.status(400).json({ error: '只支持视频、音频或图片素材' })
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > 1024 * 1024 * 1024) return res.status(400).json({ error: '视频大小无效或超过1GB' })
   const db = userClient(req.userToken)
   const { data, error } = await db.from('video_assets').upsert({ user_id: req.user.id, storage_path: storagePath, file_name: fileName, mime_type: mimeType, size_bytes: sizeBytes, status: 'ready' }, { onConflict: 'user_id,storage_path' }).select().single()
@@ -163,18 +163,18 @@ app.post('/api/video/remix', auth, async (req, res) => {
     catch { return res.status(400).json({ error: '爆款链接格式不正确' }) }
   }
   const referenceNotes = String(req.body?.referenceNotes || '').slice(0, 5000)
-  const musicAssetId = String(req.body?.musicAssetId || '')
+  const musicAssetId = String(req.body?.musicAssetId || '')\n  const referenceImageAssetId = String(req.body?.referenceImageAssetId || '')
   const admin = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } })
   const { data: assets, error: assetsError } = await admin.from('video_assets').select('id,storage_path,file_name').eq('user_id', req.user.id).in('id', assetIds)
   if (assetsError) return res.status(500).json({ error: assetsError.message })
-  if (!assets || assets.length !== assetIds.length) return res.status(400).json({ error: '部分素材不存在或不属于当前账号，请刷新素材库后重试' })
+  if (!assets || assets.length !== assetIds.length) return res.status(400).json({ error: '部分素材不存在或不属于当前账号，请刷新素材库后重试' })\n  const { data: videoRows, error: videoError } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('user_id', req.user.id).in('id', assetIds).like('mime_type', 'video/%')\n  if (videoError || !videoRows || videoRows.length !== assetIds.length) return res.status(400).json({ error: '只能选择视频素材进行剪辑，请重新选择' })
   let musicPath = ''
   if (musicAssetId) {
     const { data: music, error } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('id', musicAssetId).eq('user_id', req.user.id).maybeSingle()
     if (error || !music || !music.mime_type.startsWith('audio/')) return res.status(400).json({ error: '配乐文件不存在或格式不支持' })
     musicPath = music.storage_path
   }
-  const { data: job, error: jobError } = await admin.from('video_remix_jobs').insert({
+  let referenceImagePath = ''\n  if (referenceImageAssetId) {\n    const { data: image, error } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('id', referenceImageAssetId).eq('user_id', req.user.id).maybeSingle()\n    if (error || !image || !image.mime_type.startsWith('image/')) return res.status(400).json({ error: '爆款参考截图不存在或格式不支持' })\n    referenceImagePath = image.storage_path\n  }\n  const { data: job, error: jobError } = await admin.from('video_remix_jobs').insert({
     user_id: req.user.id, reference_url: referenceUrl || null, reference_notes: referenceNotes || null,
     input_asset_ids: assetIds, music_storage_path: musicPath || null, status: 'analyzing'
   }).select().single()
@@ -183,7 +183,7 @@ app.post('/api/video/remix', auth, async (req, res) => {
   ;(async () => {
     try {
       const { createVideoRemix } = await import('./video-remix.mjs')
-      const result = await createVideoRemix({ admin, userId: req.user.id, referenceUrl, referenceNotes, assetPaths: assets.map(a => a.storage_path), musicPath })
+      const result = await createVideoRemix({ admin, userId: req.user.id, referenceUrl, referenceNotes, assetPaths: videoRows.map(a => a.storage_path), musicPath, referenceImagePath })
       await admin.from('video_remix_jobs').update({ status: 'completed', output_storage_path: result.outputPath, edit_plan: result.editPlan, completed_at: new Date().toISOString(), error_message: null }).eq('id', job.id).eq('user_id', req.user.id)
       await admin.from('run_logs').insert({ user_id: req.user.id, task_type: 'video_remix', level: 'success', message: '自动剪辑成片完成', metadata: { job_id: job.id, output_path: result.outputPath, duration_seconds: result.editPlan.durationSeconds } })
     } catch (e) {
