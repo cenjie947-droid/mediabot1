@@ -129,6 +129,84 @@ app.put('/api/radar/preferences', auth, async (req, res) => {
   res.json({ data })
 })
 
+app.get('/api/video/assets', auth, async (req, res) => {
+  try {
+    const db = userClient(req.userToken)
+    const { data, error } = await db.from('video_assets').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false }).limit(200)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ data: data || [] })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.post('/api/video/assets', auth, async (req, res) => {
+  const b = req.body || {}
+  const storagePath = String(b.storagePath || '')
+  const fileName = String(b.fileName || '').slice(0, 240)
+  const mimeType = String(b.mimeType || '')
+  const sizeBytes = Number(b.sizeBytes || 0)
+  if (!storagePath.startsWith(req.user.id + '/') || storagePath.includes('..')) return res.status(400).json({ error: '素材路径无效' })
+  if (!fileName || !mimeType.startsWith('video/')) return res.status(400).json({ error: '请上传视频文件' })
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > 1024 * 1024 * 1024) return res.status(400).json({ error: '视频大小无效或超过1GB' })
+  const db = userClient(req.userToken)
+  const { data, error } = await db.from('video_assets').upsert({ user_id: req.user.id, storage_path: storagePath, file_name: fileName, mime_type: mimeType, size_bytes: sizeBytes, status: 'ready' }, { onConflict: 'user_id,storage_path' }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json({ data })
+})
+
+app.post('/api/video/remix', auth, async (req, res) => {
+  if (!SUPABASE_SECRET_KEY) return res.status(503).json({ error: '服务器未配置 Supabase Secret Key，无法在服务器端处理视频' })
+  const assetIds = Array.isArray(req.body?.assetIds) ? [...new Set(req.body.assetIds.map(String))].slice(0, 12) : []
+  if (!assetIds.length) return res.status(400).json({ error: '请先上传并选择自己的视频素材' })
+  const referenceUrl = String(req.body?.referenceUrl || '').trim().slice(0, 2000)
+  if (referenceUrl) {
+    try { if (!['http:', 'https:'].includes(new URL(referenceUrl).protocol)) throw new Error() }
+    catch { return res.status(400).json({ error: '爆款链接格式不正确' }) }
+  }
+  const referenceNotes = String(req.body?.referenceNotes || '').slice(0, 5000)
+  const musicAssetId = String(req.body?.musicAssetId || '')
+  const admin = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } })
+  const { data: assets, error: assetsError } = await admin.from('video_assets').select('id,storage_path,file_name').eq('user_id', req.user.id).in('id', assetIds)
+  if (assetsError) return res.status(500).json({ error: assetsError.message })
+  if (!assets || assets.length !== assetIds.length) return res.status(400).json({ error: '部分素材不存在或不属于当前账号，请刷新素材库后重试' })
+  let musicPath = ''
+  if (musicAssetId) {
+    const { data: music, error } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('id', musicAssetId).eq('user_id', req.user.id).maybeSingle()
+    if (error || !music || !music.mime_type.startsWith('audio/')) return res.status(400).json({ error: '配乐文件不存在或格式不支持' })
+    musicPath = music.storage_path
+  }
+  const { data: job, error: jobError } = await admin.from('video_remix_jobs').insert({
+    user_id: req.user.id, reference_url: referenceUrl || null, reference_notes: referenceNotes || null,
+    input_asset_ids: assetIds, music_storage_path: musicPath || null, status: 'analyzing'
+  }).select().single()
+  if (jobError) return res.status(500).json({ error: jobError.message })
+  res.status(202).json({ job: { id: job.id, status: job.status } })
+  ;(async () => {
+    try {
+      const { createVideoRemix } = await import('./video-remix.mjs')
+      const result = await createVideoRemix({ admin, userId: req.user.id, referenceUrl, referenceNotes, assetPaths: assets.map(a => a.storage_path), musicPath })
+      await admin.from('video_remix_jobs').update({ status: 'completed', output_storage_path: result.outputPath, edit_plan: result.editPlan, completed_at: new Date().toISOString(), error_message: null }).eq('id', job.id).eq('user_id', req.user.id)
+      await admin.from('run_logs').insert({ user_id: req.user.id, task_type: 'video_remix', level: 'success', message: '自动剪辑成片完成', metadata: { job_id: job.id, output_path: result.outputPath, duration_seconds: result.editPlan.durationSeconds } })
+    } catch (e) {
+      await admin.from('video_remix_jobs').update({ status: 'failed', error_message: String(e.message || e).slice(0, 1800) }).eq('id', job.id).eq('user_id', req.user.id)
+      await admin.from('run_logs').insert({ user_id: req.user.id, task_type: 'video_remix', level: 'error', message: '自动剪辑失败', metadata: { job_id: job.id, error: String(e.message || e).slice(0, 500) } })
+    }
+  })()
+})
+
+app.get('/api/video/remix/:id', auth, async (req, res) => {
+  const admin = SUPABASE_SECRET_KEY ? createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }) : null
+  if (!admin) return res.status(503).json({ error: '服务器未配置 Supabase Secret Key' })
+  const { data, error } = await admin.from('video_remix_jobs').select('*').eq('id', req.params.id).eq('user_id', req.user.id).maybeSingle()
+  if (error) return res.status(500).json({ error: error.message })
+  if (!data) return res.status(404).json({ error: '剪辑任务不存在' })
+  let outputUrl = null
+  if (data.output_storage_path) {
+    const { data: signed, error: signError } = await admin.storage.from('publish-media').createSignedUrl(data.output_storage_path, 3600)
+    if (!signError) outputUrl = signed?.signedUrl || null
+  }
+  res.json({ job: { ...data, output_url: outputUrl } })
+})
+
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'mediabot-api', version: '0.7.0', supabaseConfigured: Boolean(SUPABASE_URL && SUPABASE_KEY), secretConfigured: Boolean(SUPABASE_SECRET_KEY), aiConfigured: Boolean(AI_API_KEY), publicAppConfigured: Boolean(PUBLIC_APP_URL), douyinConfigured: Boolean(DOUYIN_CLIENT_KEY && DOUYIN_CLIENT_SECRET), xiaohongshuConfigured: Boolean(XHS_CLIENT_ID && XHS_CLIENT_SECRET) }))
 
 app.post('/api/automation/run-now', auth, async (req, res) => {
