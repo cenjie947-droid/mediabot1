@@ -169,7 +169,12 @@ app.post('/api/video/remix', auth, async (req, res) => {
   if (assetsError) return res.status(500).json({ error: assetsError.message })
   if (!assets || assets.length !== assetIds.length) return res.status(400).json({ error: '部分素材不存在或不属于当前账号，请刷新素材库后重试' })\n  const { data: videoRows, error: videoError } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('user_id', req.user.id).in('id', assetIds).like('mime_type', 'video/%')\n  if (videoError || !videoRows || videoRows.length !== assetIds.length) return res.status(400).json({ error: '只能选择视频素材进行剪辑，请重新选择' })
   let musicPath = ''
-  if (musicAssetId) {
+  let musicOptions = []
+  if (musicAssetId === 'auto') {
+    const { data: tracks, error } = await admin.from('video_assets').select('storage_path,file_name,mime_type').eq('user_id', req.user.id).like('mime_type', 'audio/%').order('created_at', { ascending: false }).limit(50)
+    if (error) return res.status(500).json({ error: error.message })
+    musicOptions = (tracks || []).map(track => ({ storagePath: track.storage_path, fileName: track.file_name }))
+  } else if (musicAssetId) {
     const { data: music, error } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('id', musicAssetId).eq('user_id', req.user.id).maybeSingle()
     if (error || !music || !music.mime_type.startsWith('audio/')) return res.status(400).json({ error: '配乐文件不存在或格式不支持' })
     musicPath = music.storage_path
@@ -190,7 +195,7 @@ app.post('/api/video/remix', auth, async (req, res) => {
   ;(async () => {
     try {
       const { createVideoRemix } = await import('./video-remix.mjs')
-      const result = await createVideoRemix({ admin, userId: req.user.id, referenceUrl, referenceNotes, assetPaths: videoRows.map(a => a.storage_path), musicPath, referenceImagePath, referenceImageMime })
+      const result = await createVideoRemix({ admin, userId: req.user.id, referenceUrl, referenceNotes, assetPaths: videoRows.map(a => a.storage_path), musicPath, referenceImagePath, referenceImageMime, musicOptions })
       const { data: content, error: contentError } = await admin.from('content_items').insert({ user_id: req.user.id, title: result.editPlan.title, body: [result.editPlan.hook, result.editPlan.structure].filter(Boolean).join('\n\n'), platform: 'douyin', status: 'draft', media_urls: [result.outputPath] }).select('id').single()
       if (contentError) throw new Error('成片已生成，但写入内容库失败：' + contentError.message)
       await admin.from('video_remix_jobs').update({ status: 'completed', output_storage_path: result.outputPath, edit_plan: result.editPlan, content_id: content.id, completed_at: new Date().toISOString(), error_message: null }).eq('id', job.id).eq('user_id', req.user.id)
