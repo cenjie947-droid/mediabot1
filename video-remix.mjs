@@ -161,6 +161,8 @@ export async function createVideoRemix({ admin, userId, referenceUrl = '', refer
       outputPath,
       editPlan: {
         title: String(plan.title || 'MediaBot 自动剪辑').slice(0, 160),
+        caption: String(plan.caption || '').slice(0, 4000),
+        hashtags: Array.isArray(plan.hashtags) ? plan.hashtags.map(tag => String(tag).replace(/^#/, '').slice(0, 40)).slice(0, 20) : [],
         hook: String(plan.hook || '').slice(0, 500),
         structure: String(plan.structure || '').slice(0, 1000),
         musicMood: String(plan.musicMood || '').slice(0, 120),
