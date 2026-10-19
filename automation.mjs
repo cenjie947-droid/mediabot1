@@ -115,11 +115,11 @@ async function executeTask(task) {
 }
 else if (task.task_type==='radar_analyze') {
   const { analyzeRadar } = await import('./trend-engine.mjs')
-  result = await analyzeRadar(config)
+  result = await analyzeRadar({ ...config, userId: task.user_id })
 }
 else if (task.task_type==='radar_category') {
   const { runCategoryRadar } = await import('./category-trend-engine.mjs')
-  result = await runCategoryRadar(config)
+  result = await runCategoryRadar({ ...config, userId: task.user_id })
 }
   else result={ skipped:true }
   const next = nextRun(task.cron_expression)

@@ -51,6 +51,180 @@ function userClient(token) {
   return createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } })
 }
 
+
+const radarCategories = ['全部赛道','伤感','搞笑','情感','美食','美女','汽车','宠物','知识','影视','游戏','财经','其他']
+app.get('/api/radar/snapshots', auth, async (req, res) => {
+  try {
+    const db = userClient(req.userToken)
+    const days = Math.max(1, Math.min(30, Number(req.query.days) || 7))
+    const since = new Date(Date.now() - days * 86400000).toISOString()
+    let q = db.from('radar_video_snapshots').select('*').gte('snapshot_at', since).order('snapshot_at', { ascending: false }).limit(500)
+    if (req.query.category && req.query.category !== '全部赛道') q = q.eq('category', String(req.query.category).slice(0, 40))
+    const { data, error } = await q
+    if (error) return res.status(500).json({ error: error.message })
+    const byVideo = new Map()
+    for (const row of data || []) {
+      if (!byVideo.has(row.video_key)) byVideo.set(row.video_key, [])
+      byVideo.get(row.video_key).push(row)
+    }
+    const videos = [...byVideo.values()].map(rows => {
+      const latest = rows[0]
+      const previous = rows.find(r => new Date(r.snapshot_at) < new Date(latest.snapshot_at))
+      const hours = previous ? Math.max((new Date(latest.snapshot_at) - new Date(previous.snapshot_at)) / 3600000, 0.01) : 0
+      const delta = previous ? Math.max(0, Number(latest.views || 0) - Number(previous.views || 0)) : null
+      return { ...latest, snapshots: rows.length, previousViews: previous ? Number(previous.views || 0) : null, viewGrowth: delta, hourlyViewGrowth: hours ? delta / hours : null, growthPercent: previous && Number(previous.views) > 0 ? (delta / Number(previous.views)) * 100 : null }
+    })
+    const categories = new Map()
+    for (const v of videos) {
+      const c = categories.get(v.category) || { category: v.category, sampledVideos: 0, views: 0, likes: 0, comments: 0, shares: 0, favorites: 0, hourlyViewGrowth: 0, trackedVideos: 0 }
+      c.sampledVideos++; for (const k of ['views','likes','comments','shares','favorites']) c[k] += Number(v[k] || 0)
+      if (v.hourlyViewGrowth !== null) { c.hourlyViewGrowth += v.hourlyViewGrowth; c.trackedVideos++ }
+      categories.set(v.category, c)
+    }
+    const categoryRows = [...categories.values()].map(c => ({ ...c, hourlyViewGrowth: c.trackedVideos ? Math.round(c.hourlyViewGrowth) : null })).sort((a,b) => (b.hourlyViewGrowth ?? -1) - (a.hourlyViewGrowth ?? -1))
+    res.json({ days, videos, categories: categoryRows, sampledVideos: videos.length, disclaimer: '仅统计你已录入的样本，不代表抖音全平台数据。增长速度只根据同一视频的历史快照计算。' })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+app.post('/api/radar/snapshots', auth, async (req, res) => {
+  try {
+    const b = req.body || {}
+    const videoUrl = String(b.videoUrl || '').trim()
+    const title = String(b.title || '').trim()
+    const category = String(b.category || '').trim()
+    if (!videoUrl || !title || !category) return res.status(400).json({ error: '视频链接、标题和赛道为必填项' })
+    let parsed
+    try { parsed = new URL(videoUrl) } catch { return res.status(400).json({ error: '视频链接格式不正确' }) }
+    if (!['http:','https:'].includes(parsed.protocol)) return res.status(400).json({ error: '仅支持 http/https 链接' })
+    const num = (v, key) => {
+      if (v === '' || v === null || v === undefined) return 0
+      const n = Number(v)
+      if (!Number.isFinite(n) || n < 0 || n > 9000000000000000) throw new Error(key + ' 必须是非负数字')
+      return Math.floor(n)
+    }
+    let metrics
+    try { metrics = { views:num(b.views,'播放量'), likes:num(b.likes,'点赞量'), comments:num(b.comments,'评论量'), shares:num(b.shares,'转发量'), favorites:num(b.favorites,'收藏量') } }
+    catch (e) { return res.status(400).json({ error: e.message }) }
+    const videoKey = String(b.videoKey || parsed.pathname || videoUrl).slice(0, 300)
+    const db = userClient(req.userToken)
+    const row = { user_id:req.user.id, video_key:videoKey, video_url:videoUrl, title:title.slice(0,300), creator_name:String(b.creatorName || '').slice(0,160) || null, category:category.slice(0,40), platform:'douyin', published_at:b.publishedAt ? new Date(b.publishedAt).toISOString() : null, snapshot_at:new Date().toISOString(), ...metrics, avg_watch_seconds:b.avgWatchSeconds === '' || b.avgWatchSeconds == null ? null : Number(b.avgWatchSeconds), completion_rate:b.completionRate === '' || b.completionRate == null ? null : Number(b.completionRate), retention_3s:b.retention3s === '' || b.retention3s == null ? null : Number(b.retention3s), retention_5s:b.retention5s === '' || b.retention5s == null ? null : Number(b.retention5s), retention_10s:b.retention10s === '' || b.retention10s == null ? null : Number(b.retention10s), source_type:'manual', notes:String(b.notes || '').slice(0,1000) || null }
+    for (const key of ['completion_rate','retention_3s','retention_5s','retention_10s']) if (row[key] !== null && (!Number.isFinite(row[key]) || row[key] < 0 || row[key] > 100)) return res.status(400).json({ error: key + ' 必须在 0 到 100 之间' })
+    if (row.avg_watch_seconds !== null && (!Number.isFinite(row.avg_watch_seconds) || row.avg_watch_seconds < 0)) return res.status(400).json({ error: '平均观看时长必须是非负数字' })
+    const { data, error } = await db.from('radar_video_snapshots').insert(row).select().single()
+    if (error) return res.status(500).json({ error: error.message })
+    res.status(201).json({ data })
+  } catch (e) { res.status(400).json({ error: e.message || '录入失败' }) }
+})
+app.get('/api/radar/preferences', auth, async (req, res) => {
+  const db = userClient(req.userToken)
+  const { data, error } = await db.from('radar_preferences').select('*').eq('user_id', req.user.id).maybeSingle()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ data: data || { watched_categories: ['伤感','情感'], production_mode: 'market' } })
+})
+app.put('/api/radar/preferences', auth, async (req, res) => {
+  const categories = Array.isArray(req.body?.watchedCategories) ? req.body.watchedCategories.filter(x => radarCategories.includes(x) && x !== '全部赛道').slice(0, 13) : []
+  const mode = req.body?.productionMode === 'vertical' ? 'vertical' : 'market'
+  const db = userClient(req.userToken)
+  const { data, error } = await db.from('radar_preferences').upsert({ user_id:req.user.id, watched_categories:categories, production_mode:mode, updated_at:new Date().toISOString() }, { onConflict:'user_id' }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.json({ data })
+})
+
+app.get('/api/video/assets', auth, async (req, res) => {
+  try {
+    const db = userClient(req.userToken)
+    const { data, error } = await db.from('video_assets').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false }).limit(200)
+    if (error) return res.status(500).json({ error: error.message })
+    res.json({ data: data || [] })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+app.post('/api/video/assets', auth, async (req, res) => {
+  const b = req.body || {}
+  const storagePath = String(b.storagePath || '')
+  const fileName = String(b.fileName || '').slice(0, 240)
+  const mimeType = String(b.mimeType || '')
+  const sizeBytes = Number(b.sizeBytes || 0)
+  if (!storagePath.startsWith(req.user.id + '/') || storagePath.includes('..')) return res.status(400).json({ error: '素材路径无效' })
+  if (!fileName || !['video/','audio/','image/'].some(prefix => mimeType.startsWith(prefix))) return res.status(400).json({ error: '只支持视频、音频或图片素材' })
+  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > 1024 * 1024 * 1024) return res.status(400).json({ error: '视频大小无效或超过1GB' })
+  const db = userClient(req.userToken)
+  const { data, error } = await db.from('video_assets').upsert({ user_id: req.user.id, storage_path: storagePath, file_name: fileName, mime_type: mimeType, size_bytes: sizeBytes, status: 'ready' }, { onConflict: 'user_id,storage_path' }).select().single()
+  if (error) return res.status(500).json({ error: error.message })
+  res.status(201).json({ data })
+})
+
+app.post('/api/video/remix', auth, async (req, res) => {
+  if (!SUPABASE_SECRET_KEY) return res.status(503).json({ error: '服务器未配置 Supabase Secret Key，无法在服务器端处理视频' })
+  const assetIds = Array.isArray(req.body?.assetIds) ? [...new Set(req.body.assetIds.map(String))].slice(0, 12) : []
+  if (!assetIds.length) return res.status(400).json({ error: '请先上传并选择自己的视频素材' })
+  const referenceUrl = String(req.body?.referenceUrl || '').trim().slice(0, 2000)
+  if (referenceUrl) {
+    try { if (!['http:', 'https:'].includes(new URL(referenceUrl).protocol)) throw new Error() }
+    catch { return res.status(400).json({ error: '爆款链接格式不正确' }) }
+  }
+  const referenceNotes = String(req.body?.referenceNotes || '').slice(0, 5000)
+  const musicAssetId = String(req.body?.musicAssetId || '')
+  const referenceImageAssetId = String(req.body?.referenceImageAssetId || '')
+  const admin = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } })
+  const { data: assets, error: assetsError } = await admin.from('video_assets').select('id,storage_path,file_name').eq('user_id', req.user.id).in('id', assetIds)
+  if (assetsError) return res.status(500).json({ error: assetsError.message })
+  if (!assets || assets.length !== assetIds.length) return res.status(400).json({ error: '部分素材不存在或不属于当前账号，请刷新素材库后重试' })
+  const { data: videoRows, error: videoError } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('user_id', req.user.id).in('id', assetIds).like('mime_type', 'video/%')
+  if (videoError || !videoRows || videoRows.length !== assetIds.length) return res.status(400).json({ error: '只能选择视频素材进行剪辑，请重新选择' })
+  let musicPath = ''
+  let musicOptions = []
+  if (musicAssetId === 'auto') {
+    const { data: tracks, error } = await admin.from('video_assets').select('storage_path,file_name,mime_type').eq('user_id', req.user.id).like('mime_type', 'audio/%').order('created_at', { ascending: false }).limit(50)
+    if (error) return res.status(500).json({ error: error.message })
+    musicOptions = (tracks || []).map(track => ({ storagePath: track.storage_path, fileName: track.file_name }))
+  } else if (musicAssetId) {
+    const { data: music, error } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('id', musicAssetId).eq('user_id', req.user.id).maybeSingle()
+    if (error || !music || !music.mime_type.startsWith('audio/')) return res.status(400).json({ error: '配乐文件不存在或格式不支持' })
+    musicPath = music.storage_path
+  }
+  let referenceImagePath = ''
+  let referenceImageMime = 'image/jpeg'
+  if (referenceImageAssetId) {
+    const { data: image, error } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('id', referenceImageAssetId).eq('user_id', req.user.id).maybeSingle()
+    if (error || !image || !image.mime_type.startsWith('image/')) return res.status(400).json({ error: '爆款参考截图不存在或格式不支持' })
+    referenceImagePath = image.storage_path
+    referenceImageMime = image.mime_type
+  }
+  const { data: job, error: jobError } = await admin.from('video_remix_jobs').insert({
+    user_id: req.user.id, reference_url: referenceUrl || null, reference_notes: referenceNotes || null,
+    input_asset_ids: assetIds, music_storage_path: musicPath || null, status: 'analyzing'
+  }).select().single()
+  if (jobError) return res.status(500).json({ error: jobError.message })
+  res.status(202).json({ job: { id: job.id, status: job.status } })
+  ;(async () => {
+    try {
+      const { createVideoRemix } = await import('./video-remix.mjs')
+      const result = await createVideoRemix({ admin, userId: req.user.id, referenceUrl, referenceNotes, assetPaths: videoRows.map(a => a.storage_path), musicPath, referenceImagePath, referenceImageMime, musicOptions })
+      const { data: content, error: contentError } = await admin.from('content_items').insert({ user_id: req.user.id, title: result.editPlan.title, body: [result.editPlan.hook, result.editPlan.structure].filter(Boolean).join('\n\n'), platform: 'douyin', status: 'draft', media_urls: [result.outputPath] }).select('id').single()
+      if (contentError) throw new Error('成片已生成，但写入内容库失败：' + contentError.message)
+      await admin.from('video_remix_jobs').update({ status: 'completed', output_storage_path: result.outputPath, edit_plan: result.editPlan, content_id: content.id, completed_at: new Date().toISOString(), error_message: null }).eq('id', job.id).eq('user_id', req.user.id)
+      await admin.from('run_logs').insert({ user_id: req.user.id, task_type: 'video_remix', level: 'success', message: '自动剪辑成片完成', metadata: { job_id: job.id, output_path: result.outputPath, duration_seconds: result.editPlan.durationSeconds } })
+    } catch (e) {
+      await admin.from('video_remix_jobs').update({ status: 'failed', error_message: String(e.message || e).slice(0, 1800) }).eq('id', job.id).eq('user_id', req.user.id)
+      await admin.from('run_logs').insert({ user_id: req.user.id, task_type: 'video_remix', level: 'error', message: '自动剪辑失败', metadata: { job_id: job.id, error: String(e.message || e).slice(0, 500) } })
+    }
+  })()
+})
+
+app.get('/api/video/remix/:id', auth, async (req, res) => {
+  const admin = SUPABASE_SECRET_KEY ? createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }) : null
+  if (!admin) return res.status(503).json({ error: '服务器未配置 Supabase Secret Key' })
+  const { data, error } = await admin.from('video_remix_jobs').select('*').eq('id', req.params.id).eq('user_id', req.user.id).maybeSingle()
+  if (error) return res.status(500).json({ error: error.message })
+  if (!data) return res.status(404).json({ error: '剪辑任务不存在' })
+  let outputUrl = null
+  if (data.output_storage_path) {
+    const { data: signed, error: signError } = await admin.storage.from('publish-media').createSignedUrl(data.output_storage_path, 3600)
+    if (!signError) outputUrl = signed?.signedUrl || null
+  }
+  res.json({ job: { ...data, output_url: outputUrl } })
+})
+
 app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'mediabot-api', version: '0.7.0', supabaseConfigured: Boolean(SUPABASE_URL && SUPABASE_KEY), secretConfigured: Boolean(SUPABASE_SECRET_KEY), aiConfigured: Boolean(AI_API_KEY), publicAppConfigured: Boolean(PUBLIC_APP_URL), douyinConfigured: Boolean(DOUYIN_CLIENT_KEY && DOUYIN_CLIENT_SECRET), xiaohongshuConfigured: Boolean(XHS_CLIENT_ID && XHS_CLIENT_SECRET) }))
 
 app.post('/api/automation/run-now', auth, async (req, res) => {
