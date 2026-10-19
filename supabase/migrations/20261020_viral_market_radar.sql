@@ -50,3 +50,20 @@ create policy "Users delete own radar snapshots" on public.radar_video_snapshots
 
 comment on table public.radar_video_snapshots is
   'User-entered or permitted-source snapshots of public videos. Not a census of all Douyin content; never treat missing retention metrics as zero.';
+
+create table if not exists public.radar_preferences (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  watched_categories text[] not null default array['伤感','情感']::text[],
+  production_mode text not null default 'market' check (production_mode in ('market','vertical')),
+  updated_at timestamptz not null default now()
+);
+alter table public.radar_preferences enable row level security;
+drop policy if exists "Users read own radar preferences" on public.radar_preferences;
+create policy "Users read own radar preferences" on public.radar_preferences
+  for select to authenticated using (auth.uid() = user_id);
+drop policy if exists "Users insert own radar preferences" on public.radar_preferences;
+create policy "Users insert own radar preferences" on public.radar_preferences
+  for insert to authenticated with check (auth.uid() = user_id);
+drop policy if exists "Users update own radar preferences" on public.radar_preferences;
+create policy "Users update own radar preferences" on public.radar_preferences
+  for update to authenticated using (auth.uid() = user_id) with check (auth.uid() = user_id);
