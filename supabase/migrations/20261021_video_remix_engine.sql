@@ -37,3 +37,5 @@ drop policy if exists "Users read own remix jobs" on public.video_remix_jobs;
 create policy "Users read own remix jobs" on public.video_remix_jobs for select to authenticated using (auth.uid() = user_id);
 drop policy if exists "Users create own remix jobs" on public.video_remix_jobs;
 create policy "Users create own remix jobs" on public.video_remix_jobs for insert to authenticated with check (auth.uid() = user_id);
+
+alter table public.video_remix_jobs add column if not exists content_id uuid references public.content_items(id) on delete set null;
