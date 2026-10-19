@@ -38,7 +38,7 @@ async function extractFrames(file, duration, assetIndex, dir) {
   return frames
 }
 
-async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes = null, referenceImageMime = 'image/jpeg', musicOptions = []) {
+async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes = null, referenceImageMime = 'image/jpeg') {
   if (!AI_API_KEY) throw new Error('未配置 AI_API_KEY，无法分析参考爆款和素材镜头')
   const frameMessages = frames.slice(0, 48).map(frame => ({
     type: 'image_url',
@@ -62,7 +62,7 @@ async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenc
   return JSON.parse(content)
 }
 
-export async function createVideoRemix({ admin, userId, referenceUrl = '', referenceNotes = '', assetPaths = [], musicPath = '', referenceImagePath = '', referenceImageMime = 'image/jpeg', musicOptions = [] }) {
+export async function createVideoRemix({ admin, userId, referenceUrl = '', referenceNotes = '', assetPaths = [], musicPath = '', referenceImagePath = '', referenceImageMime = 'image/jpeg' }) {
   if (!ffmpegPath) throw new Error('当前服务器没有可用的 FFmpeg 视频处理程序')
   if (!Array.isArray(assetPaths) || assetPaths.length < 1 || assetPaths.length > 12) throw new Error('请先选择1到12个自己的视频素材')
   const temp = await mkdtemp(path.join(os.tmpdir(), 'mediabot-remix-'))
@@ -90,7 +90,7 @@ export async function createVideoRemix({ admin, userId, referenceUrl = '', refer
       if (error || !data) throw new Error('无法读取爆款参考截图')
       referenceImageBytes = Buffer.from(await data.arrayBuffer())
     }
-    const plan = await planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes, referenceImageMime, musicOptions)
+    const plan = await planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes, referenceImageMime)
     const proposed = Array.isArray(plan.clips) ? plan.clips.slice(0, 10) : []
     const clips = proposed.map(c => {
       const assetIndex = Number(c.assetIndex), asset = assets[assetIndex]
@@ -101,7 +101,7 @@ export async function createVideoRemix({ admin, userId, referenceUrl = '', refer
       return { assetIndex, start: Math.max(0, Math.min(start, asset.duration - 0.5)), end, purpose: String(c.purpose || '').slice(0, 160), localPath: asset.localPath }
     }).filter(Boolean)
     if (!clips.length) throw new Error('AI 没有选出可用片段，请换一批素材或补充爆款内容说明后重试')
-    const chosenMusicIndex = musicOptions.length ? Math.max(0, Math.min(musicOptions.length - 1, Number(plan.selectedMusicIndex) || 0)) : -1\n    const chosenMusicPath = musicPath || (chosenMusicIndex >= 0 ? musicOptions[chosenMusicIndex].storagePath : '')\n    const chosenMusicName = musicPath ? '手动选择的配乐' : (chosenMusicIndex >= 0 ? musicOptions[chosenMusicIndex].fileName : '')\n    const rendered = []
+    const rendered = []
     for (let i = 0; i < clips.length; i++) {
       const clip = clips[i], target = path.join(temp, 'clip-' + i + '.mp4')
       const clipArgs = ['-y', '-ss', String(clip.start), '-i', clip.localPath]
@@ -137,7 +137,7 @@ export async function createVideoRemix({ admin, userId, referenceUrl = '', refer
         musicMood: String(plan.musicMood || '').slice(0, 120),
         clips: clips.map(c => ({ assetIndex: c.assetIndex, fileName: assets[c.assetIndex].fileName, startSeconds: Number(c.start.toFixed(2)), endSeconds: Number(c.end.toFixed(2)), purpose: c.purpose })),
         durationSeconds: Number(clips.reduce((n,c)=>n+c.end-c.start,0).toFixed(1)),
-        musicApplied: Boolean(chosenMusicPath),\n        selectedMusicName: chosenMusicName,
+        musicApplied: Boolean(musicPath),
         disclaimer: '这是基于抽样关键帧的自动剪辑初版，建议发布前检查镜头连续性、声音和版权。参考链接若未提供可访问视频文件，AI只依据你填写的说明分析。'
       }
     }
