@@ -232,7 +232,7 @@ async function renderRemixLab(view) {
     </div>
     <div class="notice">建议上传你有权使用的爆款参考视频，系统会分析抽样画面与语音内容；仅粘贴链接时，若平台限制访问，系统不会假装已经看过。最终成片只使用你的自有素材。</div>
     <div class="card">
-      <h3>① 添加自己的素材</h3>
+      <h3>① 上传素材并选择分类</h3>
       <p class="muted">可批量上传视频，另可上传爆款截图和多首已获授权的背景音乐。系统会根据剪辑情绪和音乐文件名线索自动挑选；建议将音乐命名为“悬疑_紧张.mp3”“治愈_温暖.mp3”等。视频用于剪辑，截图只用于参考分析。</p>
       <div class="remix-upload-grid">
         <label>视频素材（可多选）<input id="remixVideoFiles" type="file" accept="video/*" multiple></label>
@@ -245,13 +245,14 @@ async function renderRemixLab(view) {
     <div class="card">
       <h3>② 告诉 AI 你要参考哪条爆款</h3>
       <form id="remixForm" class="form">
+        <label>内容分类<select id="remixCategory"><option>搞笑</option><option>情感</option><option>知识</option><option>美食</option><option>生活</option><option>影视</option><option>宠物</option><option>汽车</option><option>游戏</option><option>其他</option></select></label>
         <label>爆款视频链接（可选）<input id="remixReferenceUrl" type="url" placeholder="粘贴抖音视频链接"></label>
         <label>爆款内容说明（建议填写）<textarea id="remixReferenceNotes" rows="3" placeholder="例如：开头是反转，前半段制造悬念，结尾有情绪释放。链接无法读取时，说明越具体越好。"></textarea></label>
         <div><b>选择要参与剪辑的视频素材</b><div id="remixAssetList" class="remix-asset-list"><div class="empty">正在读取素材库…</div></div></div>
         <label>背景音乐 <select id="remixMusicChoice"><option value="">不额外添加音乐，保留原片声音</option></select></label>
         <label>参考截图 <select id="remixImageChoice"><option value="">不使用参考截图</option></select></label>
         <label>已上传的参考视频 <select id="remixReferenceVideoChoice"><option value="">不使用参考视频</option></select></label>
-        <button id="startRemixBtn" type="submit">▶ 开始分析并自动剪辑</button>
+        <button id="startRemixBtn" type="submit">✨ 一键上传、分析并自动剪辑</button>
         <div id="remixJobStatus" role="status"></div>
       </form>
     </div>
@@ -331,7 +332,7 @@ async function startRemixJob(event) {
     status.textContent='任务已开始。后台正在分析镜头并合成视频…'
     await pollRemixJob(payload.job.id)
   } catch(e) { status.innerHTML='<div class="error">'+esc(e.message)+'</div>' }
-  finally { button.disabled=false;button.textContent='▶ 开始分析并自动剪辑' }
+  finally { button.disabled=false;button.textContent='✨ 一键上传、分析并自动剪辑' }
 }
 
 async function pollRemixJob(id) {
