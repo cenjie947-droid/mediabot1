@@ -163,11 +163,14 @@ app.post('/api/video/remix', auth, async (req, res) => {
     catch { return res.status(400).json({ error: '爆款链接格式不正确' }) }
   }
   const referenceNotes = String(req.body?.referenceNotes || '').slice(0, 5000)
-  const musicAssetId = String(req.body?.musicAssetId || '')\n  const referenceImageAssetId = String(req.body?.referenceImageAssetId || '')
+  const musicAssetId = String(req.body?.musicAssetId || '')
+  const referenceImageAssetId = String(req.body?.referenceImageAssetId || '')
   const admin = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } })
   const { data: assets, error: assetsError } = await admin.from('video_assets').select('id,storage_path,file_name').eq('user_id', req.user.id).in('id', assetIds)
   if (assetsError) return res.status(500).json({ error: assetsError.message })
-  if (!assets || assets.length !== assetIds.length) return res.status(400).json({ error: '部分素材不存在或不属于当前账号，请刷新素材库后重试' })\n  const { data: videoRows, error: videoError } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('user_id', req.user.id).in('id', assetIds).like('mime_type', 'video/%')\n  if (videoError || !videoRows || videoRows.length !== assetIds.length) return res.status(400).json({ error: '只能选择视频素材进行剪辑，请重新选择' })
+  if (!assets || assets.length !== assetIds.length) return res.status(400).json({ error: '部分素材不存在或不属于当前账号，请刷新素材库后重试' })
+  const { data: videoRows, error: videoError } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('user_id', req.user.id).in('id', assetIds).like('mime_type', 'video/%')
+  if (videoError || !videoRows || videoRows.length !== assetIds.length) return res.status(400).json({ error: '只能选择视频素材进行剪辑，请重新选择' })
   let musicPath = ''
   let musicOptions = []
   if (musicAssetId === 'auto') {
@@ -186,7 +189,8 @@ app.post('/api/video/remix', auth, async (req, res) => {
     if (error || !image || !image.mime_type.startsWith('image/')) return res.status(400).json({ error: '爆款参考截图不存在或格式不支持' })
     referenceImagePath = image.storage_path
     referenceImageMime = image.mime_type
-  }\n  const { data: job, error: jobError } = await admin.from('video_remix_jobs').insert({
+  }
+  const { data: job, error: jobError } = await admin.from('video_remix_jobs').insert({
     user_id: req.user.id, reference_url: referenceUrl || null, reference_notes: referenceNotes || null,
     input_asset_ids: assetIds, music_storage_path: musicPath || null, status: 'analyzing'
   }).select().single()
