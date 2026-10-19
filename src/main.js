@@ -160,7 +160,7 @@ function render() {
         <button id="generateBtn" type="submit">✨ AI 真正生成</button>
         <div id="aiResult"></div>
       </form>`)
-  } else if (active === 'library') {
+  } else if (active === 'remix') {\n    renderRemixLab(view)\n  } else if (active === 'library') {
     view.innerHTML = card('内容库', data.content.map((x) => `<div class="row"><div><b>${esc(x.title)}</b><small>${esc(x.platform)} · ${esc(x.status)} · 素材 ${Array.isArray(x.media_urls) && x.media_urls.length ? '已上传' : '无'}</small></div><div class="mini-actions"><strong>${x.ai_score ?? '-'}</strong><button data-queue-publish="${x.id}">加入发布队列</button></div></div>`).join('') || empty('暂无内容'))
     document.querySelectorAll('[data-queue-publish]').forEach((button) => button.addEventListener('click', () => queuePublish(button.dataset.queuePublish)))
   } else if (active === 'schedule') {
@@ -219,6 +219,135 @@ function renderRadar(view) {
   $('#radarCategory').addEventListener('change',e=>{radarCategory=e.target.value;render()})
   $('#saveRadarPrefs').addEventListener('click',saveRadarPreferences)
   $('#radarForm').addEventListener('submit',saveRadarSnapshot)
+}
+
+async function renderRemixLab(view) {
+  view.innerHTML = `
+    <div class="remix-hero">
+      <div><span class="eyebrow">MEDIABOT · VIDEO REMIX</span><h1>🎬 自动剪辑实验室</h1><p>提供爆款参考和自己的视频素材，AI分析镜头后自动筛选、剪辑并合成新视频。不生成AI视频画面。</p></div>
+      <div class="radar-hero-tag">素材由你提供</div>
+    </div>
+    <div class="notice">说明：爆款链接不会被假定为可直接读取。若链接无法访问，请上传参考截图并补充内容说明；当前版本会抽取你上传素材的关键帧来规划剪辑。请仅使用你有权使用的素材和音乐。</div>
+    <div class="card">
+      <h3>① 添加自己的素材</h3>
+      <p class="muted">可批量上传视频，另可上传一张爆款截图和一首已获授权的背景音乐。视频用于剪辑，截图只用于参考分析。</p>
+      <div class="remix-upload-grid">
+        <label>视频素材（可多选）<input id="remixVideoFiles" type="file" accept="video/*" multiple></label>
+        <label>爆款参考截图（可选）<input id="remixReferenceImage" type="file" accept="image/*"></label>
+        <label>背景音乐（可选）<input id="remixMusicFile" type="file" accept="audio/*"></label>
+      </div>
+      <button id="uploadRemixFiles">上传所选文件</button><span id="remixUploadMsg" class="muted"></span>
+    </div>
+    <div class="card">
+      <h3>② 告诉 AI 你要参考哪条爆款</h3>
+      <form id="remixForm" class="form">
+        <label>爆款视频链接（可选）<input id="remixReferenceUrl" type="url" placeholder="粘贴抖音视频链接"></label>
+        <label>爆款内容说明（建议填写）<textarea id="remixReferenceNotes" rows="3" placeholder="例如：开头是反转，前半段制造悬念，结尾有情绪释放。链接无法读取时，说明越具体越好。"></textarea></label>
+        <div><b>选择要参与剪辑的视频素材</b><div id="remixAssetList" class="remix-asset-list"><div class="empty">正在读取素材库…</div></div></div>
+        <label>背景音乐 <select id="remixMusicChoice"><option value="">不额外添加音乐，保留原片声音</option></select></label>
+        <label>参考截图 <select id="remixImageChoice"><option value="">不使用参考截图</option></select></label>
+        <button id="startRemixBtn" type="submit">▶ 开始分析并自动剪辑</button>
+        <div id="remixJobStatus" role="status"></div>
+      </form>
+    </div>
+    <div class="card"><h3>③ 最近生成的成片</h3><div id="remixRecent"><div class="empty">尚无剪辑记录</div></div></div>`
+  $('#uploadRemixFiles').addEventListener('click', uploadRemixFiles)
+  $('#remixForm').addEventListener('submit', startRemixJob)
+  await refreshRemixAssets()
+  await refreshRecentRemixes()
+}
+
+async function uploadRemixFiles() {
+  const button=$('#uploadRemixFiles'),msg=$('#remixUploadMsg')
+  const videoFiles=[...($('#remixVideoFiles').files||[])], imageFile=$('#remixReferenceImage').files?.[0], musicFile=$('#remixMusicFile').files?.[0]
+  const files=[...videoFiles,...(imageFile?[imageFile]:[]),...(musicFile?[musicFile]:[])]
+  if(!files.length) { msg.textContent='请先选择要上传的文件'; return }
+  if(files.some(f=>f.size>1024*1024*1024)) { msg.textContent='单个文件不能超过1GB'; return }
+  button.disabled=true;button.textContent='上传中…';msg.textContent=''
+  try {
+    for(const file of files) {
+      const folder=file.type.startsWith('video/')?'videos':file.type.startsWith('audio/')?'music':'references'
+      const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(-120)
+      const storagePath=user.id+'/'+folder+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'-'+safeName
+      const {error:uploadError}=await supabase.storage.from('publish-media').upload(storagePath,file,{upsert:false,contentType:file.type})
+      if(uploadError) throw uploadError
+      const response=await apiFetch('/api/video/assets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({storagePath,fileName:file.name,mimeType:file.type,sizeBytes:file.size})})
+      const result=await response.json()
+      if(!response.ok) throw new Error(result.error||'素材登记失败')
+    }
+    $('#remixVideoFiles').value='';$('#remixReferenceImage').value='';$('#remixMusicFile').value=''
+    msg.textContent='上传成功。'
+    await refreshRemixAssets()
+  } catch(e) { msg.textContent='上传失败：'+e.message;msg.className='error' }
+  finally { button.disabled=false;button.textContent='上传所选文件' }
+}
+
+async function refreshRemixAssets() {
+  const box=$('#remixAssetList')
+  if(!box) return
+  try {
+    const response=await apiFetch('/api/video/assets')
+    const payload=await response.json()
+    if(!response.ok) throw new Error(payload.error||'读取素材失败')
+    const assets=payload.data||[]
+    const videos=assets.filter(a=>String(a.mime_type).startsWith('video/'))
+    const audios=assets.filter(a=>String(a.mime_type).startsWith('audio/'))
+    const images=assets.filter(a=>String(a.mime_type).startsWith('image/'))
+    box.innerHTML=videos.length?videos.map(a=>'<label class="remix-asset"><input type="checkbox" data-remix-asset="'+esc(a.id)+'"><span><b>'+esc(a.file_name)+'</b><small>'+(Number(a.size_bytes)/1024/1024).toFixed(1)+' MB · '+new Date(a.created_at).toLocaleString()+'</small></span></label>').join(''):empty('先上传你自己的视频素材')
+    const music=$('#remixMusicChoice'),image=$('#remixImageChoice')
+    music.innerHTML='<option value="">不额外添加音乐，保留原片声音</option>'+audios.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.file_name)+'</option>').join('')
+    image.innerHTML='<option value="">不使用参考截图</option>'+images.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.file_name)+'</option>').join('')
+  } catch(e) { box.innerHTML='<div class="error">'+esc(e.message)+'</div>' }
+}
+
+async function startRemixJob(event) {
+  event.preventDefault()
+  const button=$('#startRemixBtn'),status=$('#remixJobStatus')
+  const assetIds=[...document.querySelectorAll('[data-remix-asset]:checked')].map(x=>x.dataset.remixAsset)
+  if(!assetIds.length) { status.textContent='请至少选择一个视频素材'; return }
+  button.disabled=true;button.textContent='正在创建任务…';status.textContent='AI 将分析参考信息和素材关键帧，请稍候。'
+  try {
+    const response=await apiFetch('/api/video/remix',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({assetIds,referenceUrl:$('#remixReferenceUrl').value.trim(),referenceNotes:$('#remixReferenceNotes').value.trim(),musicAssetId:$('#remixMusicChoice').value,referenceImageAssetId:$('#remixImageChoice').value})})
+    const payload=await response.json()
+    if(!response.ok) throw new Error(payload.error||'创建剪辑任务失败')
+    status.textContent='任务已开始。后台正在分析镜头并合成视频…'
+    await pollRemixJob(payload.job.id)
+  } catch(e) { status.innerHTML='<div class="error">'+esc(e.message)+'</div>' }
+  finally { button.disabled=false;button.textContent='▶ 开始分析并自动剪辑' }
+}
+
+async function pollRemixJob(id) {
+  const status=$('#remixJobStatus')
+  const started=Date.now()
+  while(Date.now()-started<20*60*1000) {
+    await new Promise(resolve=>setTimeout(resolve,3000))
+    const response=await apiFetch('/api/video/remix/'+encodeURIComponent(id))
+    const payload=await response.json()
+    if(!response.ok) throw new Error(payload.error||'读取剪辑任务失败')
+    const job=payload.job
+    if(job.status==='completed') {
+      const plan=job.edit_plan||{}
+      status.innerHTML='<div class="remix-result"><h4>成片已生成：'+esc(plan.title||'自动剪辑视频')+'</h4><p>时长：'+esc(plan.durationSeconds||'-')+' 秒 · '+(plan.musicApplied?'已混入你选择的音乐':'未额外添加音乐')+'</p>'+(plan.hook?'<p>开头思路：'+esc(plan.hook)+'</p>':'')+(job.output_url?'<video controls playsinline src="'+esc(job.output_url)+'"></video><p><a href="'+esc(job.output_url)+'" target="_blank" rel="noopener noreferrer">打开 / 保存成片</a></p>':'<p>成片已保存，但暂时无法生成预览链接。</p>')+'<details><summary>查看剪辑方案</summary><pre>'+esc(JSON.stringify(plan,null,2))+'</pre></details><p class="muted">'+esc(plan.disclaimer||'')+'</p></div>'
+      await refreshRecentRemixes()
+      return
+    }
+    if(job.status==='failed') throw new Error(job.error_message||'自动剪辑失败')
+    status.textContent=job.status==='rendering'?'正在合成视频…':'正在分析爆款参考与素材关键帧…'
+  }
+  throw new Error('任务仍在后台运行；可稍后刷新页面，在最近生成的成片中查看结果。')
+}
+
+async function refreshRecentRemixes() {
+  const box=$('#remixRecent')
+  if(!box) return
+  try {
+    const {data,error}=await supabase.from('video_remix_jobs').select('*').eq('user_id',user.id).order('created_at',{ascending:false}).limit(10)
+    if(error) throw error
+    box.innerHTML=(data||[]).length?(data||[]).map(j=>'<div class="row"><div><b>'+esc(j.edit_plan?.title||'自动剪辑任务')+'</b><small>'+new Date(j.created_at).toLocaleString()+' · '+esc(j.status)+'</small>'+(j.error_message?'<small class="error">'+esc(j.error_message)+'</small>':'')+'</div>'+(j.status==='completed'?'<button data-open-remix="'+esc(j.id)+'">查看成片</button>':'')+'</div>').join(''):empty('尚无剪辑记录')
+    box.querySelectorAll('[data-open-remix]').forEach(button=>button.addEventListener('click',async()=>{
+      try { const r=await apiFetch('/api/video/remix/'+encodeURIComponent(button.dataset.openRemix));const p=await r.json();if(!r.ok)throw new Error(p.error||'读取失败');const j=p.job;const plan=j.edit_plan||{};const status=$('#remixJobStatus');status.innerHTML='<div class="remix-result"><h4>'+esc(plan.title||'自动剪辑视频')+'</h4>'+(j.output_url?'<video controls playsinline src="'+esc(j.output_url)+'"></video><p><a href="'+esc(j.output_url)+'" target="_blank" rel="noopener noreferrer">打开 / 保存成片</a></p>':'')+'<pre>'+esc(JSON.stringify(plan,null,2))+'</pre></div>' } catch(e) { alert(e.message) }
+    }))
+  } catch(e) { box.innerHTML='<div class="error">'+esc(e.message)+'</div>' }
 }
 
 async function saveRadarPreferences() {
