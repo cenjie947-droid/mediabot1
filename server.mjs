@@ -184,7 +184,9 @@ app.post('/api/video/remix', auth, async (req, res) => {
     try {
       const { createVideoRemix } = await import('./video-remix.mjs')
       const result = await createVideoRemix({ admin, userId: req.user.id, referenceUrl, referenceNotes, assetPaths: videoRows.map(a => a.storage_path), musicPath, referenceImagePath })
-      await admin.from('video_remix_jobs').update({ status: 'completed', output_storage_path: result.outputPath, edit_plan: result.editPlan, completed_at: new Date().toISOString(), error_message: null }).eq('id', job.id).eq('user_id', req.user.id)
+      const { data: content, error: contentError } = await admin.from('content_items').insert({ user_id: req.user.id, title: result.editPlan.title, body: [result.editPlan.hook, result.editPlan.structure].filter(Boolean).join('\n\n'), platform: 'douyin', status: 'draft', media_urls: [result.outputPath] }).select('id').single()
+      if (contentError) throw new Error('成片已生成，但写入内容库失败：' + contentError.message)
+      await admin.from('video_remix_jobs').update({ status: 'completed', output_storage_path: result.outputPath, edit_plan: result.editPlan, content_id: content.id, completed_at: new Date().toISOString(), error_message: null }).eq('id', job.id).eq('user_id', req.user.id)
       await admin.from('run_logs').insert({ user_id: req.user.id, task_type: 'video_remix', level: 'success', message: '自动剪辑成片完成', metadata: { job_id: job.id, output_path: result.outputPath, duration_seconds: result.editPlan.durationSeconds } })
     } catch (e) {
       await admin.from('video_remix_jobs').update({ status: 'failed', error_message: String(e.message || e).slice(0, 1800) }).eq('id', job.id).eq('user_id', req.user.id)
