@@ -20,10 +20,11 @@ export async function fetchDouyinRadar(config = {}) {
 
 export async function analyzeRadar(config = {}) {
   const days = Math.max(1, Math.min(30, Number(config.days) || 7))
+  if (!config.userId) throw new Error('Radar analysis requires userId')
   const since = new Date(Date.now() - days * 86400000).toISOString()
   const { data, error } = await admin.from('radar_video_snapshots')
     .select('user_id,video_key,category,snapshot_at,views,likes,comments,shares,favorites,published_at')
-    .gte('snapshot_at', since).order('snapshot_at', { ascending: false }).limit(5000)
+    .eq('user_id', config.userId).gte('snapshot_at', since).order('snapshot_at', { ascending: false }).limit(5000)
   if (error) throw new Error(error.message)
   const videos = new Map()
   for (const row of data || []) {
