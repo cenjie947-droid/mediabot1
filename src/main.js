@@ -233,7 +233,7 @@ async function renderRemixLab(view) {
     <div class="notice">说明：爆款链接不会被假定为可直接读取。若链接无法访问，请上传参考截图并补充内容说明；当前版本会抽取你上传素材的关键帧来规划剪辑。请仅使用你有权使用的素材和音乐。</div>
     <div class="card">
       <h3>① 添加自己的素材</h3>
-      <p class="muted">可批量上传视频，另可上传一张爆款截图和一首已获授权的背景音乐。视频用于剪辑，截图只用于参考分析。</p>
+      <p class="muted">可批量上传视频，另可上传爆款截图和多首已获授权的背景音乐。系统会根据剪辑情绪和音乐文件名线索自动挑选；建议将音乐命名为“悬疑_紧张.mp3”“治愈_温暖.mp3”等。视频用于剪辑，截图只用于参考分析。</p>
       <div class="remix-upload-grid">
         <label>视频素材（可多选）<input id="remixVideoFiles" type="file" accept="video/*" multiple></label>
         <label>爆款参考截图（可选）<input id="remixReferenceImage" type="file" accept="image/*"></label>
@@ -298,7 +298,7 @@ async function refreshRemixAssets() {
     const images=assets.filter(a=>String(a.mime_type).startsWith('image/'))
     box.innerHTML=videos.length?videos.map(a=>'<label class="remix-asset"><input type="checkbox" data-remix-asset="'+esc(a.id)+'"><span><b>'+esc(a.file_name)+'</b><small>'+(Number(a.size_bytes)/1024/1024).toFixed(1)+' MB · '+new Date(a.created_at).toLocaleString()+'</small></span></label>').join(''):empty('先上传你自己的视频素材')
     const music=$('#remixMusicChoice'),image=$('#remixImageChoice')
-    music.innerHTML='<option value="">不额外添加音乐，保留原片声音</option>'+audios.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.file_name)+'</option>').join('')
+    music.innerHTML='<option value="auto">AI自动选择音乐库中最匹配的一首</option><option value="">不额外添加音乐，保留原片声音</option>'+audios.map(a=>'<option value="'+esc(a.id)+'">手动指定：'+esc(a.file_name)+'</option>').join('')
     image.innerHTML='<option value="">不使用参考截图</option>'+images.map(a=>'<option value="'+esc(a.id)+'">'+esc(a.file_name)+'</option>').join('')
   } catch(e) { box.innerHTML='<div class="error">'+esc(e.message)+'</div>' }
 }
@@ -330,7 +330,7 @@ async function pollRemixJob(id) {
     const job=payload.job
     if(job.status==='completed') {
       const plan=job.edit_plan||{}
-      status.innerHTML='<div class="remix-result"><h4>成片已生成：'+esc(plan.title||'自动剪辑视频')+'</h4><p>时长：'+esc(plan.durationSeconds||'-')+' 秒 · '+(plan.musicApplied?'已混入你选择的音乐':'未额外添加音乐')+'</p>'+(plan.hook?'<p>开头思路：'+esc(plan.hook)+'</p>':'')+(job.output_url?'<video controls playsinline src="'+esc(job.output_url)+'"></video><p><a href="'+esc(job.output_url)+'" target="_blank" rel="noopener noreferrer">打开 / 保存成片</a></p>':'<p>成片已保存，但暂时无法生成预览链接。</p>')+'<details><summary>查看剪辑方案</summary><pre>'+esc(JSON.stringify(plan,null,2))+'</pre></details>'+(job.content_id?'<button data-remix-queue="'+esc(job.content_id)+'">加入发布队列</button>':'')+'<p class="muted">'+esc(plan.disclaimer||'')+'</p></div>'
+      status.innerHTML='<div class="remix-result"><h4>成片已生成：'+esc(plan.title||'自动剪辑视频')+'</h4><p>时长：'+esc(plan.durationSeconds||'-')+' 秒 · '+(plan.musicApplied?'已混入配乐：'+esc(plan.selectedMusicName||'自动选择'):'未额外添加音乐')+'</p>'+(plan.hook?'<p>开头思路：'+esc(plan.hook)+'</p>':'')+(job.output_url?'<video controls playsinline src="'+esc(job.output_url)+'"></video><p><a href="'+esc(job.output_url)+'" target="_blank" rel="noopener noreferrer">打开 / 保存成片</a></p>':'<p>成片已保存，但暂时无法生成预览链接。</p>')+'<details><summary>查看剪辑方案</summary><pre>'+esc(JSON.stringify(plan,null,2))+'</pre></details>'+(job.content_id?'<button data-remix-queue="'+esc(job.content_id)+'">加入发布队列</button>':'')+'<p class="muted">'+esc(plan.disclaimer||'')+'</p></div>'
       status.querySelectorAll('[data-remix-queue]').forEach(b=>b.addEventListener('click',()=>queuePublish(b.dataset.remixQueue)))
       await refreshRecentRemixes()
       return
