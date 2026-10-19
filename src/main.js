@@ -19,6 +19,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 const pages = [
   ['dashboard', 'Dashboard'],
   ['hot', '爆款雷达'],
+  ['remix', '自动剪辑'],
   ['create', 'AI 写文案'],
   ['library', '内容库'],
   ['schedule', '发布计划'],
