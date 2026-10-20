@@ -96,9 +96,9 @@ async function checkAIProvider() {
         const parsed = JSON.parse(raw)
         detail = String(parsed?.error?.message || parsed?.message || parsed?.error?.status || '').slice(0, 500)
       } catch {
-        detail = raw.replace(/\\s+/g, ' ').slice(0, 500)
+        detail = raw.replace(/\s+/g, ' ').slice(0, 500)
       }
-      if (!detail) detail = raw.replace(/\\s+/g, ' ').slice(0, 500)
+      if (!detail) detail = raw.replace(/\s+/g, ' ').slice(0, 500)
       detail = detail.replace(/(AIza[0-9A-Za-z_-]{20,})/g, '[已隐藏密钥]')
       throw new Error('AI 服务预检查失败（' + response.status + '）：' + (detail || '服务商未提供错误详情'))
     }
