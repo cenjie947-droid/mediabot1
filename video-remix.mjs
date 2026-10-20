@@ -27,7 +27,7 @@ async function durationOf(file) {
 }
 
 async function extractFrames(file, duration, assetIndex, dir) {
-  const count = Math.min(4, Math.max(2, Math.ceil(duration / 12)))
+  const count = Math.min(3, Math.max(2, Math.ceil(duration / 18)))
   const frames = []
   for (let i = 0; i < count; i++) {
     const time = Math.min(Math.max(0.2, duration - 0.2), duration * (i + 0.5) / count)
@@ -41,7 +41,7 @@ async function extractFrames(file, duration, assetIndex, dir) {
 async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenceImageBytes = null, referenceImageMime = 'image/jpeg', musicOptions = [], referenceVideoFrames = [], referenceTranscript = '') {
   if (!AI_API_KEY) throw new Error('未配置 AI_API_KEY，无法分析参考爆款和素材镜头')
   // Keep the request compatible with OpenAI-compatible providers such as Gemini.
-  const allFrames = [...referenceVideoFrames.map(frame => ({ ...frame, isReference: true })), ...frames].slice(0, 24)
+  const allFrames = [...referenceVideoFrames.map(frame => ({ ...frame, isReference: true })), ...frames].slice(0, 16)
   const frameMessages = allFrames.map(frame => ({
     type: 'image_url',
     image_url: { url: 'data:image/jpeg;base64,' + frame.bytes.toString('base64') }
@@ -64,10 +64,12 @@ async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenc
     let detail = ''
     try {
       const parsed = JSON.parse(raw)
-      detail = String(parsed?.error?.message || parsed?.message || parsed?.error?.status || '').slice(0, 360)
+      detail = String(parsed?.error?.message || parsed?.message || parsed?.error?.status || '').slice(0, 500)
     } catch {
-      detail = raw.replace(/\s+/g, ' ').slice(0, 240)
+      detail = raw.replace(/\s+/g, ' ').slice(0, 500)
     }
+    if (!detail) detail = raw.replace(/\s+/g, ' ').slice(0, 500)
+    detail = detail.replace(/(AIza[0-9A-Za-z_-]{20,})/g, '[已隐藏密钥]')
     const safeDetail = detail ? ' 服务商返回：' + detail : ''
     throw new Error('AI 镜头分析失败（' + response.status + '）：' + (response.status >= 500 ? '服务商暂时异常。' : '请检查模型名称、接口地址及请求兼容性。') + safeDetail)
   }
@@ -76,9 +78,43 @@ async function planWithAI(referenceUrl, referenceNotes, assets, frames, referenc
   return JSON.parse(content)
 }
 
+async function checkAIProvider() {
+  if (!AI_API_KEY) throw new Error('未配置 AI_API_KEY，无法分析参考爆款和素材镜头')
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 12000)
+  try {
+    const response = await fetch(AI_BASE_URL + '/chat/completions', {
+      method: 'POST',
+      signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + AI_API_KEY },
+      body: JSON.stringify({ model: AI_MODEL, messages: [{ role: 'user', content: '只回复 OK' }] })
+    })
+    const raw = await response.text()
+    if (!response.ok) {
+      let detail = ''
+      try {
+        const parsed = JSON.parse(raw)
+        detail = String(parsed?.error?.message || parsed?.message || parsed?.error?.status || '').slice(0, 500)
+      } catch {
+        detail = raw.replace(/\\s+/g, ' ').slice(0, 500)
+      }
+      if (!detail) detail = raw.replace(/\\s+/g, ' ').slice(0, 500)
+      detail = detail.replace(/(AIza[0-9A-Za-z_-]{20,})/g, '[已隐藏密钥]')
+      throw new Error('AI 服务预检查失败（' + response.status + '）：' + (detail || '服务商未提供错误详情'))
+    }
+  } catch (error) {
+    if (error.name === 'AbortError') throw new Error('AI 服务预检查超时（12秒）：请检查 AI 接口地址、网络和密钥')
+    throw error
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export async function createVideoRemix({ admin, userId, referenceUrl = '', referenceNotes = '', assetPaths = [], musicPath = '', referenceImagePath = '', referenceImageMime = 'image/jpeg', referenceVideoPath = '', musicOptions = [] }) {
   if (!ffmpegPath) throw new Error('当前服务器没有可用的 FFmpeg 视频处理程序')
   if (!Array.isArray(assetPaths) || assetPaths.length < 1 || assetPaths.length > 12) throw new Error('请先选择1到12个自己的视频素材')
+  // Validate key, endpoint, model and basic chat compatibility before downloading or extracting video frames.
+  await checkAIProvider()
   const temp = await mkdtemp(path.join(os.tmpdir(), 'mediabot-remix-'))
   try {
     const assets = []
