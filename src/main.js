@@ -720,7 +720,7 @@ async function queuePublish(contentId){
   const when=prompt('定时发布时间（可留空，立即进入队列）：\n例如 2026-10-19 20:00')
   let scheduledAt=null
   if(when?.trim()){ const d=new Date(when.replace(' ','T')); if(Number.isNaN(d.getTime())) return alert('时间格式无效'); scheduledAt=d.toISOString() }
-  try{ const r=await apiFetch('/api/publish/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contentId,socialAccountId:accounts[pick].id,scheduledAt})}); const p=await r.json(); if(!r.ok) throw new Error(p.error||'加入队列失败'); alert('已加入真实发布队列'); await load() }catch(e){alert(e.message)}
+  try{ const r=await apiFetch('/api/publish/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contentId,socialAccountId:accounts[pick].id,scheduledAt})}); const p=await r.json(); if(!r.ok) throw new Error(p.error||'加入队列失败'); alert('已加入发布队列。注意：加入队列不等于已发布，最终结果以后台任务状态和平台返回结果为准。'); await load() }catch(e){alert(e.message)}
 }
 
 async function addAccount(platform) {
