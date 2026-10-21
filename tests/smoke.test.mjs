@@ -103,3 +103,12 @@ test('AI generation result links directly to its saved content', async () => {
   assert.ok(app.includes('id="openGeneratedLibrary"'), 'success result must offer a content library link')
   assert.ok(app.includes("editingContent?.platform==='douyin'?'selected':''"), 'editor must restore the saved platform')
 })
+
+
+test('publish queue rejects unauthorized accounts and invalid schedules', async () => {
+  const server = await read('../server.mjs')
+  assert.ok(server.includes("account.status !== 'connected'"), 'only officially connected accounts may be queued')
+  assert.ok(server.includes('定时发布时间必须晚于当前时间'), 'past schedules must be rejected')
+  assert.ok(server.includes('内容目标平台与所选账号不一致'), 'content and target platform must match')
+  assert.ok(server.includes(".eq('id',content.id).eq('user_id',req.user.id)"), 'content status update must be scoped to the authenticated user')
+})
