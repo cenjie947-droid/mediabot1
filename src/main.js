@@ -28,7 +28,7 @@ let user = null
 let demoMode = false
 let active = 'dashboard'
 let editingContentId = null
-let data = { hot: [], content: [], tasks: [], logs: [], accounts: [], radar: [], radarPrefs: { watched_categories: ['伤感','情感'], production_mode: 'market' } }
+let data = { hot: [], content: [], tasks: [], logs: [], accounts: [], jobs: [], radar: [], radarPrefs: { watched_categories: ['伤感','情感'], production_mode: 'market' } }
 let radarCategory = '全部赛道'
 const radarCategories = ['伤感','搞笑','情感','美食','美女','汽车','宠物','知识','影视','游戏','财经','其他']
 
@@ -203,6 +203,16 @@ async function load() {
     hot: results[0].data || [], content: results[1].data || [], tasks: results[2].data || [], logs: results[3].data || [], accounts: results[4].data || [],
     radar: results[5].data || [], radarPrefs: results[6].data || { watched_categories: ['伤感','情感'], production_mode: 'market' }
   }
+  data.jobs = []
+  try {
+    const response = await apiFetch('/api/publish/jobs?limit=50')
+    if (response.ok) {
+      const payload = await response.json()
+      data.jobs = Array.isArray(payload.jobs) ? payload.jobs : []
+    }
+  } catch (error) {
+    console.warn('无法读取发布队列历史：', error.message)
+  }
   render()
 }
 
@@ -285,6 +295,16 @@ function render() {
     $('#postsCreate').addEventListener('click', () => { editingContentId=null; active='create'; render() })
     document.querySelectorAll('[data-post-edit]').forEach(button=>button.addEventListener('click',()=>openContentEditor(button.dataset.postEdit)))
     document.querySelectorAll('[data-post-queue]').forEach(button=>button.addEventListener('click',()=>queuePublish(button.dataset.postQueue)))
+    const jobStatus = { queued:'排队中', publishing:'发布中', published:'已发布', failed:'发布失败', cancelled:'已取消', needs_review:'需要人工核对' }
+    const jobRows = data.jobs.map(job => {
+      const content = data.content.find(item => String(item.id) === String(job.content_id))
+      const label = jobStatus[job.status] || job.status || '未知状态'
+      const schedule = job.scheduled_at ? new Date(job.scheduled_at).toLocaleString() : '立即发布队列'
+      const detail = job.error_message ? '<small class="publish-job-error">' + esc(job.error_message) + '</small>' : ''
+      const publishedAt = job.published_at ? ' · ' + new Date(job.published_at).toLocaleString() : ''
+      return '<div class="post-record"><div class="post-record-main"><b>' + esc(content?.title || '内容记录已不可用') + '</b><small>' + esc(job.platform || '未指定平台') + ' · ' + esc(schedule) + publishedAt + '</small>' + detail + '</div><span class="status-chip">' + esc(label) + '</span></div>'
+    }).join('')
+    view.innerHTML += card('发布队列记录', jobRows || empty('暂无发布队列记录。加入发布队列后，执行结果会显示在这里。'))
   } else if (active === 'effects') {
     const published = data.content.filter(x => ['published','posted','success','completed'].includes(String(x.status || '').toLowerCase())).length
     const drafts = data.content.filter(x => ['draft','ready','generated'].includes(String(x.status || '').toLowerCase())).length
