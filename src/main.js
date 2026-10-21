@@ -163,7 +163,7 @@ async function loadDemo() {
       { id:'demo-content-002', title:'新手提升效率的三个习惯', platform:'douyin', status:'scheduled_demo', body:'开头提出痛点，中段展示三个可执行习惯，结尾邀请讨论。', scheduled_at:'2030-01-02T10:00:00.000Z', created_at:new Date().toISOString() },
       { id:'demo-content-003', title:'一件日常好物的使用记录', platform:'xiaohongshu', status:'published_demo', body:'以个人体验为主，明确使用场景和适用边界。', created_at:new Date().toISOString() }
     ],
-    tasks: [], logs: [{id:'demo-log-1',created_at:new Date().toISOString(),level:'info',message:'演示模式已启动；所有数据均为虚构样例。'}],
+    tasks: [], jobs: [], logs: [{id:'demo-log-1',created_at:new Date().toISOString(),level:'info',message:'演示模式已启动；所有数据均为虚构样例。'}],
     accounts: [
       {id:'demo-account-douyin',platform:'douyin',account_name:'演示抖音账号',status:'demo_connected',followers:12800},
       {id:'demo-account-xhs',platform:'xiaohongshu',account_name:'演示小红书账号',status:'demo_connected',followers:8600}
@@ -296,7 +296,7 @@ function render() {
     document.querySelectorAll('[data-post-edit]').forEach(button=>button.addEventListener('click',()=>openContentEditor(button.dataset.postEdit)))
     document.querySelectorAll('[data-post-queue]').forEach(button=>button.addEventListener('click',()=>queuePublish(button.dataset.postQueue)))
     const jobStatus = { queued:'排队中', publishing:'发布中', published:'已发布', failed:'发布失败', cancelled:'已取消', needs_review:'需要人工核对' }
-    const jobRows = data.jobs.map(job => {
+    const jobRows = (data.jobs || []).map(job => {
       const content = data.content.find(item => String(item.id) === String(job.content_id))
       const label = jobStatus[job.status] || job.status || '未知状态'
       const schedule = job.scheduled_at ? new Date(job.scheduled_at).toLocaleString() : '立即发布队列'
