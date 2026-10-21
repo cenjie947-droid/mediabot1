@@ -239,8 +239,9 @@ function render() {
   } else if (active === 'materials') {
     renderMaterials(view)
   } else if (active === 'posts') {
-    view.innerHTML = card('发帖记录', `<div class="filter-row"><span>已保存的帖子与内容记录</span><button id="postsCreate">＋ 新建内容</button></div>` + (data.content.map((x) => `<div class="post-record"><div class="post-platform">${esc((x.platform || '内容').slice(0,1).toUpperCase())}</div><div class="post-record-main"><b>${esc(x.title || '未命名内容')}</b><small>${esc(x.platform || '未指定平台')} · ${esc(x.status || '草稿')} · ${x.created_at ? new Date(x.created_at).toLocaleString() : '时间未记录'}</small></div><span class="status-chip">${esc(x.status || '草稿')}</span></div>`).join('') || empty('暂无发帖记录。先去创作者台创建内容。')));
+    view.innerHTML = card('发帖记录', `<div class="filter-row"><span>已保存的帖子与内容记录</span><button id="postsCreate">＋ 新建内容</button></div>` + (data.content.map((x) => `<div class="post-record"><div class="post-platform">${esc((x.platform || '内容').slice(0,1).toUpperCase())}</div><div class="post-record-main"><b>${esc(x.title || '未命名内容')}</b><small>${esc(x.platform || '未指定平台')} · ${esc(x.status || '草稿')} · ${x.created_at ? new Date(x.created_at).toLocaleString() : '时间未记录'}</small></div><span class="status-chip">${esc(x.status || '草稿')}</span><button class="secondary" data-post-queue="${esc(x.id)}">加入发布队列</button></div>`).join('') || empty('暂无发帖记录。先去创作者台创建内容。')));
     $('#postsCreate').addEventListener('click', () => { active='create'; render() })
+    document.querySelectorAll('[data-post-queue]').forEach(button=>button.addEventListener('click',()=>queuePublish(button.dataset.postQueue)))
   } else if (active === 'effects') {
     const published = data.content.filter(x => ['published','posted','success','completed'].includes(String(x.status || '').toLowerCase())).length
     const drafts = data.content.filter(x => ['draft','ready','generated'].includes(String(x.status || '').toLowerCase())).length
