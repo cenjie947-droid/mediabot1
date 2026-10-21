@@ -214,3 +214,10 @@ test('demo fixture initializes publish history safely without authenticated API 
   assert.ok(main.includes('(data.jobs || []).map(job =>'), 'post history must tolerate missing jobs data')
   assert.ok(main.includes("if (demoMode) throw new Error('演示模式为只读状态"), 'demo mode must not call authenticated write APIs')
 })
+
+
+test('ambiguous publish outcome warns users not to retry blindly', async () => {
+  const main = await read('../src/main.js')
+  assert.ok(main.includes("job.status === 'needs_review'"), 'manual-review state must trigger a dedicated warning')
+  assert.ok(main.includes('不要直接重试，以免重复发布'), 'warning must explain duplicate-publish risk')
+})
