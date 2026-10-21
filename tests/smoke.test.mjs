@@ -206,3 +206,11 @@ test('post history UI loads and displays real publish job statuses including man
   assert.ok(main.includes("card('发布队列记录'"), 'publish queue history must be visible on post history page')
   assert.ok(main.includes("esc(job.error_message)"), 'job error messages must be escaped before rendering')
 })
+
+
+test('demo fixture initializes publish history safely without authenticated API access', async () => {
+  const main = await read('../src/main.js')
+  assert.ok(main.includes('tasks: [], jobs: [], logs:'), 'demo fixture must initialize empty publish history')
+  assert.ok(main.includes('(data.jobs || []).map(job =>'), 'post history must tolerate missing jobs data')
+  assert.ok(main.includes("if (demoMode) throw new Error('演示模式为只读状态"), 'demo mode must not call authenticated write APIs')
+})
