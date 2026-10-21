@@ -197,3 +197,12 @@ test('publish job history API is authenticated, user-scoped, bounded, and expose
   assert.ok(server.includes("res.set('Cache-Control','no-store')"), 'sensitive publishing history must not be cached')
   assert.ok(migration.includes("'needs_review'"), 'history must be able to surface manual-review status')
 })
+
+
+test('post history UI loads and displays real publish job statuses including manual review', async () => {
+  const main = await read('../src/main.js')
+  assert.ok(main.includes("apiFetch('/api/publish/jobs?limit=50')"), 'UI must fetch current user publish history')
+  assert.ok(main.includes("needs_review:'需要人工核对'"), 'ambiguous results must be clearly labeled')
+  assert.ok(main.includes("card('发布队列记录'"), 'publish queue history must be visible on post history page')
+  assert.ok(main.includes("esc(job.error_message)"), 'job error messages must be escaped before rendering')
+})
