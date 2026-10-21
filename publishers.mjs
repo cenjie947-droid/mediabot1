@@ -8,7 +8,7 @@ async function fetchMedia(admin, mediaUrls) {
   return { blob: await r.blob(), type: r.headers.get('content-type') || 'video/mp4' }
 }
 
-async function douyinPublish(job, account, content, secret) {
+async function douyinPublish(admin, job, account, content, secret) {
   if (!secret?.access_token) throw new Error('抖音账号缺少 access_token，请重新授权')
   const openId = account.external_account_id || secret.metadata?.open_id
   if (!openId) throw new Error('抖音账号缺少 open_id，请重新授权')
@@ -44,7 +44,7 @@ export async function publishJobs(admin,jobs){
       const {data:secret}=await admin.schema('private').from('social_account_secrets').select('*').eq('social_account_id',job.social_account_id).single()
       if(!account||!content) throw new Error('账号或内容不存在')
       let out
-      if(job.platform==='douyin') out=await douyinPublish(job,account,content,secret)
+      if(job.platform==='douyin') out=await douyinPublish(admin,job,account,content,secret)
       else throw new Error('小红书真实发布需要官方开放平台应用审核通过后启用；当前版本已预留安全适配器，不使用模拟发布')
       await admin.from('publish_jobs').update({status:'published',published_at:new Date().toISOString(),external_id:out.external_id||null,metadata:out.raw||{},updated_at:new Date().toISOString()}).eq('id',job.id)
       await admin.from('content_items').update({status:'published',published_at:new Date().toISOString()}).eq('id',job.content_id)
