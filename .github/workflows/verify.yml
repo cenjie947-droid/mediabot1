@@ -1,7 +1,7 @@
 name: Verify MediaBot
 on:
   push:
-    branches: [main, feature/viral-market-radar]
+    branches: [main, feature/viral-market-radar, bnsbot-style-rebuild]
   pull_request:
     branches: [main]
 jobs:
@@ -13,6 +13,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      - run: npm test
       - run: node --check server.mjs
       - run: node --check video-remix.mjs
       - run: node --check src/main.js

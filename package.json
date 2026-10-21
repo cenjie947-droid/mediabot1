@@ -8,7 +8,8 @@
     "build": "vite build",
     "start": "node server.mjs",
     "preview": "vite preview",
-    "automation": "node --env-file=.env worker.mjs"
+    "automation": "node --env-file-if-exists=.env worker.mjs",
+    "test": "node --test"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.118.0",
@@ -16,5 +17,8 @@
     "express": "5.1.0",
     "cron-parser": "5.10.2",
     "ffmpeg-static": "^5.2.0"
+  },
+  "engines": {
+    "node": ">=22.6.0"
   }
 }

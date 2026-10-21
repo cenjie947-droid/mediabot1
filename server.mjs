@@ -244,12 +244,12 @@ app.post('/api/automation/run-now', auth, async (req, res) => {
 })
 
 app.post('/api/ai/generate', auth, async (req, res) => {
-  const { topic, platform = 'all', tone = '专业但有网感', length = '中等' } = req.body || {}
+  const { topic, platform = 'all', tone = '专业但有网感', length = '中等', requirements = '' } = req.body || {}
   if (!topic?.trim()) return res.status(400).json({ error: '请输入主题' })
   if (!AI_API_KEY) return res.status(503).json({ error: 'AI 服务尚未配置。请在服务器环境变量中设置 AI_API_KEY、AI_BASE_URL、AI_MODEL。' })
 
   const system = `你是中文内容运营总监。根据用户给出的热点/主题，输出适合中国社交媒体的原创内容。必须避免虚构事实，不能编造来源或数据。请严格返回 JSON，不要 Markdown 代码块。字段：title(string), xiaohongshu(string), douyin(string), summary(string), hashtags(string[]), ai_score(number 0-100), recommendation(string).`
-  const user = `主题：${topic}\n目标平台：${platform}\n语气：${tone}\n篇幅：${length}\n请给出可直接进入内容库的版本。小红书要有吸引人的开头、分段、行动建议；抖音要适合口播，包含3秒钩子、主体和结尾行动号召。`
+  const user = `主题：${topic}\n目标平台：${platform}\n语气：${tone}\n篇幅：${length}\n用户补充要求：${String(requirements || '').trim() || '无'}\n请给出可直接进入内容库的版本。小红书要有吸引人的开头、分段、行动建议；抖音要适合口播，包含3秒钩子、主体和结尾行动号召。`
 
   try {
     const r = await fetch(`${AI_BASE_URL}/chat/completions`, {
@@ -343,19 +343,54 @@ app.get('/api/oauth/douyin/callback', async (req,res) => {
 app.post('/api/publish/queue', auth, async (req,res) => {
   const { contentId, socialAccountId, scheduledAt }=req.body||{}
   if(!contentId||!socialAccountId) return res.status(400).json({error:'contentId 和 socialAccountId 必填'})
+  let normalizedSchedule = null
+  if (scheduledAt) {
+    const parsed = new Date(scheduledAt)
+    if (Number.isNaN(parsed.getTime())) return res.status(400).json({error:'定时发布时间无效'})
+    if (parsed.getTime() <= Date.now()) return res.status(400).json({error:'定时发布时间必须晚于当前时间'})
+    normalizedSchedule = parsed.toISOString()
+  }
   const db=userClient(req.userToken)
-  const {data:content,error:ce}=await db.from('content_items').select('*').eq('id',contentId).single(); if(ce) return res.status(404).json({error:ce.message})
-  const {data:account,error:ae}=await db.from('social_accounts').select('*').eq('id',socialAccountId).single(); if(ae) return res.status(404).json({error:ae.message})
-  const {data:job,error}=await db.from('publish_jobs').insert({user_id:req.user.id,content_id:content.id,social_account_id:account.id,platform:account.platform,status:'queued',scheduled_at:scheduledAt||null}).select().single()
-  if(error) return res.status(500).json({error:error.message})
-  await db.from('content_items').update({status:scheduledAt?'scheduled':'review',scheduled_at:scheduledAt||null}).eq('id',content.id)
-  res.json({job})
+  const {data:content,error:ce}=await db.from('content_items').select('*').eq('id',contentId).single()
+  if(ce || !content) return res.status(404).json({error:'找不到该内容，或你没有访问权限'})
+  const {data:account,error:ae}=await db.from('social_accounts').select('*').eq('id',socialAccountId).single()
+  if(ae || !account) return res.status(404).json({error:'找不到该账号，或你没有访问权限'})
+  if(account.status !== 'connected') return res.status(409).json({error:'该账号尚未完成官方授权，不能加入真实发布队列'})
+  if(content.platform && content.platform !== 'all' && content.platform !== account.platform) return res.status(400).json({error:'内容目标平台与所选账号不一致'})
+  // Make queue requests idempotent for an already pending job. This prevents double-clicks
+  // and retries after a partial database failure from creating duplicate pending publishes.
+  const {data:existing,error:existingError}=await db.from('publish_jobs').select('*')
+    .eq('user_id',req.user.id).eq('content_id',content.id).eq('social_account_id',account.id)
+    .eq('status','queued').limit(1).maybeSingle()
+  if(existingError) return res.status(500).json({error:existingError.message})
+  let job=existing
+  if(!job) {
+    const {data:created,error}=await db.from('publish_jobs').insert({user_id:req.user.id,content_id:content.id,social_account_id:account.id,platform:account.platform,status:'queued',scheduled_at:normalizedSchedule}).select().single()
+    if(error) return res.status(500).json({error:error.message})
+    job=created
+  }
+  // Heal content metadata even when a previous request created the queue row but failed here.
+  const {error:updateError}=await db.from('content_items').update({status:normalizedSchedule?'scheduled':'review',scheduled_at:normalizedSchedule}).eq('id',content.id).eq('user_id',req.user.id)
+  if(updateError) return res.status(500).json({error:'发布任务已入队，但内容状态更新失败：'+updateError.message,job})
+  res.json({job,alreadyQueued:Boolean(existing)})
+})
+
+app.get('/api/publish/jobs', auth, async (req,res) => {
+  try {
+    const db=userClient(req.userToken)
+    const limit=Math.max(1,Math.min(100,Number(req.query.limit)||30))
+    const {data,error}=await db.from('publish_jobs').select('id,content_id,social_account_id,platform,status,scheduled_at,started_at,published_at,external_id,error_message,created_at,updated_at').eq('user_id',req.user.id).order('created_at',{ascending:false}).limit(limit)
+    if(error) return res.status(500).json({error:error.message})
+    res.set('Cache-Control','no-store')
+    res.json({jobs:data||[],count:(data||[]).length})
+  } catch(e) { res.status(500).json({error:e.message}) }
 })
 
 app.post('/api/publish/run-now', auth, async (req,res) => {
   if(!SUPABASE_SECRET_KEY) return res.status(503).json({error:'服务器未配置 Secret Key'})
   const admin=createClient(SUPABASE_URL,SUPABASE_SECRET_KEY)
-  const {data:jobs,error}=await admin.from('publish_jobs').select('*').eq('user_id',req.user.id).eq('status','queued').order('scheduled_at',{ascending:true}).limit(10)
+  const now=new Date().toISOString()
+  const {data:jobs,error}=await admin.from('publish_jobs').select('*').eq('user_id',req.user.id).eq('status','queued').or('scheduled_at.is.null,scheduled_at.lte.'+now).order('scheduled_at',{ascending:true}).limit(10)
   if(error) return res.status(500).json({error:error.message})
   const {publishJobs}=await import('./publishers.mjs')
   const result=await publishJobs(admin,jobs||[])

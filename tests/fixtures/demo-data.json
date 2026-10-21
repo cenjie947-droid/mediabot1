@@ -1,0 +1,139 @@
+{
+  "_notice": "Synthetic UI fixtures only. Not connected to real platforms; no tokens, credentials, or real user data.",
+  "account": {
+    "id": "demo-user-0001",
+    "displayName": "演示创作者",
+    "email": "creator@example.test",
+    "mode": "demo"
+  },
+  "socialAccounts": [
+    {
+      "id": "demo-account-douyin",
+      "platform": "douyin",
+      "displayName": "演示抖音账号",
+      "status": "demo_connected",
+      "followers": 12800,
+      "note": "模拟数据，不代表真实授权"
+    },
+    {
+      "id": "demo-account-xhs",
+      "platform": "xiaohongshu",
+      "displayName": "演示小红书账号",
+      "status": "demo_connected",
+      "followers": 8600,
+      "note": "模拟数据，不代表真实授权"
+    }
+  ],
+  "hotTopics": [
+    {
+      "id": "demo-topic-001",
+      "title": "一周效率提升小技巧",
+      "category": "知识",
+      "platform": "douyin",
+      "views": 128000,
+      "likes": 8200,
+      "comments": 640,
+      "score": 92,
+      "sampled": true
+    },
+    {
+      "id": "demo-topic-002",
+      "title": "平价好物真实体验",
+      "category": "生活",
+      "platform": "xiaohongshu",
+      "views": 76300,
+      "likes": 6100,
+      "comments": 380,
+      "score": 87,
+      "sampled": true
+    },
+    {
+      "id": "demo-topic-003",
+      "title": "新手常见误区盘点",
+      "category": "教程",
+      "platform": "douyin",
+      "views": 54200,
+      "likes": 3900,
+      "comments": 210,
+      "score": 81,
+      "sampled": true
+    }
+  ],
+  "contentItems": [
+    {
+      "id": "demo-content-001",
+      "title": "三步整理桌面，让工作更专注",
+      "platform": "xiaohongshu",
+      "status": "draft",
+      "body": "从桌面分区、减少视觉干扰和固定收纳位置三个角度分享。",
+      "scheduledAt": null
+    },
+    {
+      "id": "demo-content-002",
+      "title": "新手提升效率的三个习惯",
+      "platform": "douyin",
+      "status": "scheduled_demo",
+      "body": "开头提出痛点，中段展示三个可执行习惯，结尾邀请讨论。",
+      "scheduledAt": "2030-01-02T10:00:00.000Z"
+    },
+    {
+      "id": "demo-content-003",
+      "title": "一件日常好物的使用记录",
+      "platform": "xiaohongshu",
+      "status": "published_demo",
+      "body": "以个人体验为主，明确使用场景和适用边界。",
+      "scheduledAt": null
+    }
+  ],
+  "materials": [
+    {
+      "id": "demo-asset-001",
+      "name": "桌面整理参考图.jpg",
+      "kind": "image",
+      "sizeBytes": 4820000,
+      "status": "demo"
+    },
+    {
+      "id": "demo-asset-002",
+      "name": "效率技巧分镜.mp4",
+      "kind": "video",
+      "sizeBytes": 23800000,
+      "status": "demo"
+    },
+    {
+      "id": "demo-asset-003",
+      "name": "口播草稿.wav",
+      "kind": "audio",
+      "sizeBytes": 3400000,
+      "status": "demo"
+    }
+  ],
+  "analytics": {
+    "period": "近7天（模拟）",
+    "impressions": 258400,
+    "likes": 18200,
+    "comments": 1260,
+    "shares": 740,
+    "publishedPosts": 12
+  },
+  "leaderboard": [
+    {
+      "rank": 1,
+      "name": "演示账号 A",
+      "engagementRate": 8.7,
+      "posts": 14
+    },
+    {
+      "rank": 2,
+      "name": "演示账号 B",
+      "engagementRate": 7.9,
+      "posts": 11
+    },
+    {
+      "rank": 3,
+      "name": "演示账号 C",
+      "engagementRate": 6.8,
+      "posts": 9
+    }
+  ]
+}
