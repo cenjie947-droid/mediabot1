@@ -49,9 +49,13 @@ $('#app').innerHTML = `
       <div id="userbox" class="userbox"></div>
     </aside>
     <main>
-      <header>
-        <div><b id="title">Dashboard</b><span>内容运营中枢</span></div>
-        <button id="logout" class="ghost hidden">退出</button>
+      <header class="app-header">
+        <div class="header-title"><b id="title">Dashboard</b><span>内容运营中枢 <i class="status-pip"></i> 工作区已就绪</span></div>
+        <div class="header-tools">
+          <label class="global-search"><span>⌕</span><input id="globalSearch" type="search" placeholder="搜索功能，如：剪辑、排期…" aria-label="搜索功能"></label>
+          <button id="globalCreate" class="header-create">＋ 快速创作</button>
+          <button id="logout" class="ghost hidden">退出</button>
+        </div>
       </header>
       <section id="view"></section>
     </main>
@@ -72,16 +76,50 @@ $('#app').innerHTML = `
   </div>`
 
 const nav = $('#nav')
-for (const [id, label] of pages) {
-  const button = document.createElement('button')
-  button.dataset.page = id
-  button.textContent = label
-  button.addEventListener('click', () => {
-    active = id
-    render()
-  })
-  nav.appendChild(button)
+const navGroups = [
+  { title: '工作台', ids: ['dashboard'] },
+  { title: '发现与创作', ids: ['hot', 'create', 'remix', 'library'] },
+  { title: '发布与自动化', ids: ['schedule', 'accounts', 'tasks'] },
+  { title: '系统', ids: ['logs'] }
+]
+for (const group of navGroups) {
+  const section = document.createElement('div')
+  section.className = 'nav-section'
+  const heading = document.createElement('div')
+  heading.className = 'nav-section-title'
+  heading.textContent = group.title
+  section.appendChild(heading)
+  for (const id of group.ids) {
+    const [, label] = pages.find((item) => item[0] === id) || [id, id]
+    const button = document.createElement('button')
+    button.dataset.page = id
+    button.textContent = label
+    button.addEventListener('click', () => {
+      active = id
+      render()
+    })
+    section.appendChild(button)
+  }
+  nav.appendChild(section)
 }
+
+$('#globalCreate')?.addEventListener('click', goCreate)
+$('#globalSearch')?.addEventListener('input', (event) => {
+  const query = event.target.value.trim().toLowerCase()
+  document.querySelectorAll('[data-page]').forEach((button) => {
+    button.hidden = Boolean(query) && !button.textContent.toLowerCase().includes(query)
+  })
+  document.querySelectorAll('.nav-section').forEach((section) => {
+    const buttons = [...section.querySelectorAll('[data-page]')]
+    section.hidden = Boolean(query) && !buttons.some((button) => !button.hidden)
+  })
+})
+$('#globalSearch')?.addEventListener('keydown', (event) => {
+  if (event.key !== 'Enter') return
+  const query = event.target.value.trim().toLowerCase()
+  const match = pages.find(([, label]) => label.toLowerCase().includes(query))
+  if (match) { active = match[0]; event.target.value = ''; document.querySelectorAll('[data-page]').forEach((b) => { b.hidden = false }); document.querySelectorAll('.nav-section').forEach((s) => { s.hidden = false }); render() }
+})
 
 function setAuthMessage(message, kind = '') {
   const box = $('#authMsg')
@@ -150,6 +188,18 @@ function render() {
         <div><span class="eyebrow">YOUR CONTENT WORKSPACE</span><h1>把灵感，变成下一条好内容。</h1><p>从发现热点、生成文案到管理发布计划，在一个工作台完成内容生产。</p>
           <div class="workbench-actions"><button id="newContentBtn">＋ 创建内容</button><button id="goHotBtn" class="hero-secondary">查看热点 ↗</button></div>
         </div><div class="hero-orbit" aria-hidden="true"><div class="orbit-ring"></div><div class="orbit-core">Mb<span>✳</span></div><i>IDEA → POST</i></div>
+      </div>
+      <div class="workflow-card">
+        <div class="workflow-intro"><span class="eyebrow dark-eyebrow">CONTENT WORKFLOW</span><h3>从灵感到发布，一条流程完成</h3><p>先找方向，再生产内容，最后安排发布。</p></div>
+        <div class="workflow-steps">
+          <button data-workflow="hot"><span class="workflow-number">01</span><b>发现热点</b><small>找选题与趋势</small><i>↗</i></button>
+          <span class="workflow-connector">→</span>
+          <button data-workflow="create"><span class="workflow-number">02</span><b>生成文案</b><small>整理标题与内容</small><i>↗</i></button>
+          <span class="workflow-connector">→</span>
+          <button data-workflow="remix"><span class="workflow-number">03</span><b>制作视频</b><small>用自己的素材剪辑</small><i>↗</i></button>
+          <span class="workflow-connector">→</span>
+          <button data-workflow="schedule"><span class="workflow-number">04</span><b>安排发布</b><small>进入发布计划</small><i>↗</i></button>
+        </div>
       </div>
       <div class="section-heading"><div><span class="eyebrow dark-eyebrow">OVERVIEW</span><h2>运营概览</h2></div><span class="muted">数据来自当前账号已保存的记录</span></div>
       <div class="stats workbench-stats">
@@ -226,6 +276,7 @@ function render() {
     view.innerHTML = card('运行日志', data.logs.map((x) => `<div class="log"><span>${new Date(x.created_at).toLocaleString()}</span><b>${esc(x.level)}</b><p>${esc(x.message)}</p></div>`).join('') || empty('暂无日志'))
   }
 
+  document.querySelectorAll('[data-workflow]').forEach((button) => button.addEventListener('click', () => { active = button.dataset.workflow; render() }))
   bindForms()
 }
 
