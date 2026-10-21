@@ -50,3 +50,12 @@ test('queue UI does not claim a post was published merely because it was queued'
   assert.ok(app.includes('加入队列不等于已发布'), 'queue confirmation must distinguish queued from published')
   assert.ok(!app.includes("alert('已加入真实发布队列')"), 'misleading success message must be removed')
 })
+
+test('API-key-free demo mode uses synthetic content and clearly stays read-only', async () => {
+  const app = await read('../src/main.js')
+  assert.ok(app.includes('进入演示模式（无需 API 密钥）'), 'login page must offer demo entry')
+  assert.ok(app.includes('演示模式：当前为虚构样例数据'), 'demo must disclose synthetic data')
+  assert.ok(app.includes("if (demoMode) throw new Error('演示模式为只读状态"), 'API writes must be blocked in demo mode')
+  assert.ok(app.includes("if (demoMode) return alert('演示模式为只读状态"), 'mutation handlers must be blocked in demo mode')
+  assert.ok(app.includes("id:'demo-content-001'"), 'demo must show sample content')
+})
