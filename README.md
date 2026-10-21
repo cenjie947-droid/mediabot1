@@ -45,7 +45,7 @@ npm.cmd start
 
 ## 安全
 
-`.env` 不提交 Git。Supabase Secret Key 和平台 access token 只在服务端使用。`private.social_account_secrets` 不授予 anon/authenticated。
+`.env` 不提交 Git。Supabase Secret Key 和平台 access token 只在服务端使用。`public.social_account_secrets` 已启用 RLS，且不授予 anon/authenticated；仅服务端 service_role 可访问。
 
 ## Supabase v7 schema
 
