@@ -75,3 +75,12 @@ test('demo mode blocks schedule mutations and labels sample accounts honestly', 
   assert.ok(app.includes('（未授权）'), 'sample social accounts must not look like real platform authorizations')
   assert.ok(app.includes("if (demoMode) { demoMode=false; user=null;"), 'demo logout must exit demo mode without signing out a fake user')
 })
+
+
+test('AI generation forwards creator requirements into the model prompt', async () => {
+  const server = await read('../server.mjs')
+  const app = await read('../src/main.js')
+  assert.ok(server.includes("requirements = ''"), 'server must accept optional creator requirements')
+  assert.ok(server.includes('用户补充要求：${String(requirements || \'\').trim() || \'无\'}'), 'creator requirements must be included in the AI prompt')
+  assert.ok(app.includes("requirements: $('#body').value"), 'form requirements must be sent to the API')
+})
