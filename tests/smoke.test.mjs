@@ -120,3 +120,12 @@ test('Douyin publisher passes its storage client into media retrieval', async ()
   assert.ok(publisher.includes('fetchMedia(admin, content.media_urls)'), 'media retrieval must use the passed admin client')
   assert.ok(publisher.includes('douyinPublish(admin,job,account,content,secret)'), 'publish worker must pass the admin client')
 })
+
+
+test('publish worker claims only queued jobs and checks account/content ownership', async () => {
+  const publisher = await read('../publishers.mjs')
+  assert.ok(publisher.includes(".eq('id',job.id).eq('status','queued').select('id').maybeSingle()"), 'job must be atomically claimed only from queued state')
+  assert.ok(publisher.includes('account.user_id!==job.user_id||content.user_id!==job.user_id'), 'job associations must belong to its user')
+  assert.ok(publisher.includes("if(account.status!=='connected')"), 'worker must recheck account authorization')
+  assert.ok(publisher.includes('skipped'), 'already-claimed jobs must be skipped')
+})
