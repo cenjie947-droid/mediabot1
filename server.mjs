@@ -357,11 +357,22 @@ app.post('/api/publish/queue', auth, async (req,res) => {
   if(ae || !account) return res.status(404).json({error:'找不到该账号，或你没有访问权限'})
   if(account.status !== 'connected') return res.status(409).json({error:'该账号尚未完成官方授权，不能加入真实发布队列'})
   if(content.platform && content.platform !== 'all' && content.platform !== account.platform) return res.status(400).json({error:'内容目标平台与所选账号不一致'})
-  const {data:job,error}=await db.from('publish_jobs').insert({user_id:req.user.id,content_id:content.id,social_account_id:account.id,platform:account.platform,status:'queued',scheduled_at:normalizedSchedule}).select().single()
-  if(error) return res.status(500).json({error:error.message})
+  // Make queue requests idempotent for an already pending job. This prevents double-clicks
+  // and retries after a partial database failure from creating duplicate pending publishes.
+  const {data:existing,error:existingError}=await db.from('publish_jobs').select('*')
+    .eq('user_id',req.user.id).eq('content_id',content.id).eq('social_account_id',account.id)
+    .eq('status','queued').limit(1).maybeSingle()
+  if(existingError) return res.status(500).json({error:existingError.message})
+  let job=existing
+  if(!job) {
+    const {data:created,error}=await db.from('publish_jobs').insert({user_id:req.user.id,content_id:content.id,social_account_id:account.id,platform:account.platform,status:'queued',scheduled_at:normalizedSchedule}).select().single()
+    if(error) return res.status(500).json({error:error.message})
+    job=created
+  }
+  // Heal content metadata even when a previous request created the queue row but failed here.
   const {error:updateError}=await db.from('content_items').update({status:normalizedSchedule?'scheduled':'review',scheduled_at:normalizedSchedule}).eq('id',content.id).eq('user_id',req.user.id)
   if(updateError) return res.status(500).json({error:'发布任务已入队，但内容状态更新失败：'+updateError.message,job})
-  res.json({job})
+  res.json({job,alreadyQueued:Boolean(existing)})
 })
 
 app.get('/api/publish/jobs', auth, async (req,res) => {
