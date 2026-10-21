@@ -1,7 +1,7 @@
 name: Verify MediaBot
 on:
   push:
-    branches: [main, feature/viral-market-radar]
+    branches: [main, feature/viral-market-radar, bnsbot-style-rebuild]
   pull_request:
     branches: [main]
 jobs:
