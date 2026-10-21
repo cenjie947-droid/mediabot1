@@ -94,3 +94,12 @@ test('saved content editing is user-scoped and demo mode remains read-only', asy
   assert.ok(app.includes('data-post-edit='), 'post history must expose editing')
   assert.ok(app.includes('data-library-edit='), 'content library must expose editing')
 })
+
+
+test('AI generation result links directly to its saved content', async () => {
+  const app = await read('../src/main.js')
+  assert.ok(app.includes('payload.content.id'), 'generated database row must be used for editing')
+  assert.ok(app.includes('id="editGeneratedContent"'), 'success result must offer direct editing')
+  assert.ok(app.includes('id="openGeneratedLibrary"'), 'success result must offer a content library link')
+  assert.ok(app.includes("editingContent?.platform==='douyin'?'selected':''"), 'editor must restore the saved platform')
+})
