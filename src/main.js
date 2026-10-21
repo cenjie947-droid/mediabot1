@@ -691,6 +691,7 @@ function bindForms() {
 }
 
 async function uploadMediaIfAny() {
+  if (demoMode) throw new Error('演示模式为只读状态，请登录真实账号后再执行此操作。')
   const file=$('#mediaFile')?.files?.[0]
   if(!file) return []
   if(!user) throw new Error('请先登录')
