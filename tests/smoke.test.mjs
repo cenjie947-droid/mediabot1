@@ -186,3 +186,14 @@ test('ambiguous successful platform publish requires review instead of retryable
   assert.ok(migration.includes("'needs_review'"), 'database status constraint must allow review state')
   assert.ok(publisher.includes(".eq('id',job.id).eq('status','publishing')"), 'status update must only affect the job currently claimed by this worker')
 })
+
+
+test('publish job history API is authenticated, user-scoped, bounded, and exposes review status', async () => {
+  const server = await read('../server.mjs')
+  const migration = await read('../supabase/migrations/20261022_core_v7_schema.sql')
+  assert.ok(server.includes("app.get('/api/publish/jobs', auth"), 'publish history must require authentication')
+  assert.ok(server.includes(".eq('user_id',req.user.id).order('created_at'"), 'history must only return the current user jobs')
+  assert.ok(server.includes("Math.min(100,Number(req.query.limit)||30)"), 'history page size must be capped')
+  assert.ok(server.includes("res.set('Cache-Control','no-store')"), 'sensitive publishing history must not be cached')
+  assert.ok(migration.includes("'needs_review'"), 'history must be able to surface manual-review status')
+})
