@@ -343,12 +343,24 @@ app.get('/api/oauth/douyin/callback', async (req,res) => {
 app.post('/api/publish/queue', auth, async (req,res) => {
   const { contentId, socialAccountId, scheduledAt }=req.body||{}
   if(!contentId||!socialAccountId) return res.status(400).json({error:'contentId 和 socialAccountId 必填'})
+  let normalizedSchedule = null
+  if (scheduledAt) {
+    const parsed = new Date(scheduledAt)
+    if (Number.isNaN(parsed.getTime())) return res.status(400).json({error:'定时发布时间无效'})
+    if (parsed.getTime() <= Date.now()) return res.status(400).json({error:'定时发布时间必须晚于当前时间'})
+    normalizedSchedule = parsed.toISOString()
+  }
   const db=userClient(req.userToken)
-  const {data:content,error:ce}=await db.from('content_items').select('*').eq('id',contentId).single(); if(ce) return res.status(404).json({error:ce.message})
-  const {data:account,error:ae}=await db.from('social_accounts').select('*').eq('id',socialAccountId).single(); if(ae) return res.status(404).json({error:ae.message})
-  const {data:job,error}=await db.from('publish_jobs').insert({user_id:req.user.id,content_id:content.id,social_account_id:account.id,platform:account.platform,status:'queued',scheduled_at:scheduledAt||null}).select().single()
+  const {data:content,error:ce}=await db.from('content_items').select('*').eq('id',contentId).single()
+  if(ce || !content) return res.status(404).json({error:'找不到该内容，或你没有访问权限'})
+  const {data:account,error:ae}=await db.from('social_accounts').select('*').eq('id',socialAccountId).single()
+  if(ae || !account) return res.status(404).json({error:'找不到该账号，或你没有访问权限'})
+  if(account.status !== 'connected') return res.status(409).json({error:'该账号尚未完成官方授权，不能加入真实发布队列'})
+  if(content.platform && content.platform !== 'all' && content.platform !== account.platform) return res.status(400).json({error:'内容目标平台与所选账号不一致'})
+  const {data:job,error}=await db.from('publish_jobs').insert({user_id:req.user.id,content_id:content.id,social_account_id:account.id,platform:account.platform,status:'queued',scheduled_at:normalizedSchedule}).select().single()
   if(error) return res.status(500).json({error:error.message})
-  await db.from('content_items').update({status:scheduledAt?'scheduled':'review',scheduled_at:scheduledAt||null}).eq('id',content.id)
+  const {error:updateError}=await db.from('content_items').update({status:normalizedSchedule?'scheduled':'review',scheduled_at:normalizedSchedule}).eq('id',content.id).eq('user_id',req.user.id)
+  if(updateError) return res.status(500).json({error:'发布任务已入队，但内容状态更新失败：'+updateError.message,job})
   res.json({job})
 })
 
