@@ -233,11 +233,11 @@ function render() {
     $('#viewHot').addEventListener('click', () => { active='hot'; render() })
     $('#viewTasks').addEventListener('click', () => { active='tasks'; render() })
   } else if (active === 'studio') {
-    active = 'create'; render(); return
+    renderStudio(view)
   } else if (active === 'ai') {
-    active = 'create'; render(); return
+    renderAIStudio(view)
   } else if (active === 'materials') {
-    active = 'library'; render(); return
+    renderMaterials(view)
   } else if (active === 'posts') {
     view.innerHTML = card('发帖记录', `<div class="filter-row"><span>已保存的帖子与内容记录</span><button id="postsCreate">＋ 新建内容</button></div>` + (data.content.map((x) => `<div class="post-record"><div class="post-platform">${esc((x.platform || '内容').slice(0,1).toUpperCase())}</div><div class="post-record-main"><b>${esc(x.title || '未命名内容')}</b><small>${esc(x.platform || '未指定平台')} · ${esc(x.status || '草稿')} · ${x.created_at ? new Date(x.created_at).toLocaleString() : '时间未记录'}</small></div><span class="status-chip">${esc(x.status || '草稿')}</span></div>`).join('') || empty('暂无发帖记录。先去创作者台创建内容。')));
     $('#postsCreate').addEventListener('click', () => { active='create'; render() })
@@ -294,6 +294,105 @@ function render() {
 
   document.querySelectorAll('[data-workflow]').forEach((button) => button.addEventListener('click', () => { active = button.dataset.workflow; render() }))
   bindForms()
+}
+
+
+function renderStudio(view) {
+  view.innerHTML = `
+    <div class="page-intro"><span class="eyebrow dark-eyebrow">CREATOR STUDIO</span><h1>创作者台</h1><p>从选题、文案到素材和发布，集中完成每一步创作。</p></div>
+    <div class="studio-hero"><div><span class="studio-kicker">TODAY'S WORKSPACE</span><h2>今天准备创作什么？</h2><p>先选方向，再完成内容，最后安排发布。</p><div class="studio-actions"><button id="studioStartAI">✦ AI 生成文案</button><button id="studioBrowseHot" class="secondary">查看热门选题</button></div></div><div class="studio-symbol">✳</div></div>
+    <div class="studio-step-grid">
+      <button class="studio-step" data-studio-go="hot"><span>01 · 选题</span><b>发现热门方向</b><small>查看已收集热点与样本趋势</small><i>↗</i></button>
+      <button class="studio-step" data-studio-go="ai"><span>02 · 创作</span><b>生成标题和正文</b><small>按平台和语气制作内容</small><i>↗</i></button>
+      <button class="studio-step" data-studio-go="materials"><span>03 · 素材</span><b>管理创作素材</b><small>查看上传的视频、图片与音频</small><i>↗</i></button>
+      <button class="studio-step" data-studio-go="schedule"><span>04 · 发布</span><b>安排发布计划</b><small>将内容加入发布队列</small><i>↗</i></button>
+    </div>
+    <div class="section-heading"><div><span class="eyebrow dark-eyebrow">RECENT CONTENT</span><h2>最近创作</h2></div><button class="text-button" id="studioAllPosts">查看全部 ↗</button></div>
+    <div class="card studio-recent">${data.content.slice(0,6).map(x=>`<div class="post-record"><div class="post-platform">${esc((x.platform||'文').slice(0,1).toUpperCase())}</div><div class="post-record-main"><b>${esc(x.title||'未命名内容')}</b><small>${esc(x.platform||'未指定平台')} · ${esc(x.status||'草稿')} · ${x.created_at?new Date(x.created_at).toLocaleString():'时间未记录'}</small></div><button class="secondary" data-studio-edit="${esc(x.id)}">继续处理</button></div>`).join('')||empty('还没有内容，先创建第一条文案。')}</div>`
+  $('#studioStartAI').addEventListener('click',()=>{active='ai';render()})
+  $('#studioBrowseHot').addEventListener('click',()=>{active='hot';render()})
+  $('#studioAllPosts').addEventListener('click',()=>{active='posts';render()})
+  document.querySelectorAll('[data-studio-go]').forEach(b=>b.addEventListener('click',()=>{active=b.dataset.studioGo;render()}))
+  document.querySelectorAll('[data-studio-edit]').forEach(b=>b.addEventListener('click',()=>{active='posts';render()}))
+}
+
+function renderAIStudio(view) {
+  view.innerHTML = `
+    <div class="page-intro"><span class="eyebrow dark-eyebrow">AI CREATION</span><h1>AI 助手</h1><p>生成原创内容草稿，保存后可继续编辑、安排发布。需要配置可用的 AI 服务密钥。</p></div>
+    <div class="ai-studio-layout"><div class="card"><div class="ai-title"><span class="ai-avatar">✦</span><div><h3>内容创作助手</h3><small>根据主题生成社交媒体内容</small></div></div><form id="aiStudioForm" class="form">
+      <label>创作主题<input id="aiStudioTopic" placeholder="例如：新手如何挑选适合自己的相机" required></label>
+      <div class="studio-form-row"><label>发布平台<select id="aiStudioPlatform"><option value="all">通用</option><option value="xiaohongshu">小红书</option><option value="douyin">抖音</option></select></label><label>内容类型<select id="aiStudioType"><option>实用教程</option><option>种草分享</option><option>口播脚本</option><option>热点评论</option><option>故事分享</option></select></label></div>
+      <div class="studio-form-row"><label>表达风格<select id="aiStudioTone"><option>自然、有网感</option><option>专业可信</option><option>轻松幽默</option><option>观点鲜明</option></select></label><label>篇幅<select id="aiStudioLength"><option>中等</option><option>简短</option><option>详细</option></select></label></div>
+      <label>补充要求<textarea id="aiStudioNotes" rows="4" placeholder="受众、重点、需要避开的内容……"></textarea></label>
+      <button type="submit" id="aiStudioSubmit">生成内容草稿</button><div id="aiStudioMsg" role="status"></div>
+    </form></div><div class="card ai-side-card"><h3>创作小建议</h3><div class="ai-tip"><b>先明确目标</b><p>说明内容要解决的问题，以及希望读者看完后做什么。</p></div><div class="ai-tip"><b>加入真实细节</b><p>补充自己的经历、产品信息或实际素材，避免空泛表达。</p></div><div class="ai-tip"><b>发布前检查</b><p>确认事实、版权、平台规范和素材授权。</p></div><button id="aiStudioTemplates" class="secondary">浏览创作模板</button></div></div>`
+  $('#aiStudioTemplates').addEventListener('click',()=>{active='templates';render()})
+  $('#aiStudioForm').addEventListener('submit',async e=>{
+    e.preventDefault()
+    const topic=$('#aiStudioTopic').value.trim()
+    const btn=$('#aiStudioSubmit'),msg=$('#aiStudioMsg')
+    btn.disabled=true;btn.textContent='正在生成…';msg.textContent='正在请求已配置的 AI 服务。'
+    try{
+      const response=await apiFetch('/api/content/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,title:topic,platform:$('#aiStudioPlatform').value,contentType:$('#aiStudioType').value,tone:$('#aiStudioTone').value,length:$('#aiStudioLength').value,notes:$('#aiStudioNotes').value})})
+      const payload=await response.json()
+      if(!response.ok) throw new Error(payload.error||'生成失败')
+      msg.textContent='生成请求完成。请前往内容库查看已保存结果。'
+      await load()
+    }catch(err){
+      msg.textContent='当前生成接口未完成或 AI 服务未配置：'+err.message+'。可以先使用“AI 写文案”现有页面。'
+      const fallback=document.createElement('button');fallback.type='button';fallback.className='secondary';fallback.textContent='打开现有 AI 写文案';fallback.onclick=()=>{active='create';render();const title=$('#ctitle');if(title)title.value=topic;const body=$('#body');if(body)body.value=$('#aiStudioNotes')?.value||''}
+      msg.appendChild(document.createTextNode(' '));msg.appendChild(fallback)
+    }finally{btn.disabled=false;btn.textContent='生成内容草稿'}
+  })
+}
+
+async function renderMaterials(view) {
+  view.innerHTML = `
+    <div class="page-intro"><span class="eyebrow dark-eyebrow">ASSET LIBRARY</span><h1>素材库</h1><p>集中管理你上传的创作素材。文件保存在当前账号对应的存储空间中。</p></div>
+    <div class="card"><h3>上传新素材</h3><p class="muted">支持图片、视频和音频。单个文件最大 1GB；请只上传自己拥有或获授权使用的内容。</p><form id="materialsUploadForm" class="materials-upload"><input id="materialsFiles" type="file" accept="image/*,video/*,audio/*" multiple required><button id="materialsUploadBtn" type="submit">上传所选素材</button><span id="materialsUploadMsg" role="status"></span></form></div>
+    <div class="section-heading"><div><span class="eyebrow dark-eyebrow">YOUR ASSETS</span><h2>已上传素材</h2></div><button id="materialsRefresh" class="secondary">刷新</button></div>
+    <div id="materialsGrid" class="materials-grid"><div class="empty">正在读取素材库…</div></div>`
+  $('#materialsRefresh').addEventListener('click',()=>loadMaterialsList())
+  $('#materialsUploadForm').addEventListener('submit',uploadMaterials)
+  await loadMaterialsList()
+}
+
+async function loadMaterialsList() {
+  const grid=$('#materialsGrid'); if(!grid)return
+  grid.innerHTML=empty('正在读取素材库…')
+  try{
+    const response=await apiFetch('/api/video/assets')
+    const payload=await response.json()
+    if(!response.ok)throw new Error(payload.error||'读取素材失败')
+    const assets=payload.data||[]
+    if(!assets.length){grid.innerHTML=empty('素材库还是空的。上传视频、图片或音频后会显示在这里。');return}
+    grid.innerHTML=assets.map(a=>{
+      const kind=String(a.mime_type||'').startsWith('video/')?'视频':String(a.mime_type||'').startsWith('image/')?'图片':String(a.mime_type||'').startsWith('audio/')?'音频':'文件'
+      return `<article class="material-card"><div class="material-preview">${kind==='图片'?'<span>▧</span>':kind==='视频'?'<span>▶</span>':kind==='音频'?'<span>♫</span>':'<span>▤</span>'}</div><div class="material-info"><b title="${esc(a.file_name)}">${esc(a.file_name||'未命名素材')}</b><small>${kind} · ${(Number(a.size_bytes||0)/1024/1024).toFixed(1)} MB</small><small>${a.created_at?new Date(a.created_at).toLocaleString():'时间未记录'}</small></div></article>`
+    }).join('')
+  }catch(e){grid.innerHTML=`<div class="notice">暂时无法读取素材列表：${esc(e.message)}。请确认服务端素材接口和 publish-media 存储桶已配置。</div>`}
+}
+
+async function uploadMaterials(event) {
+  event.preventDefault()
+  const files=[...($('#materialsFiles').files||[])],msg=$('#materialsUploadMsg'),btn=$('#materialsUploadBtn')
+  if(!files.length)return
+  if(files.some(f=>f.size>1024*1024*1024)){msg.textContent='单个文件不能超过 1GB';return}
+  btn.disabled=true;msg.textContent='正在上传…'
+  try{
+    for(const file of files){
+      const folder=file.type.startsWith('video/')?'videos':file.type.startsWith('audio/')?'music':'references'
+      const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(-120)
+      const storagePath=user.id+'/'+folder+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'-'+safeName
+      const {error}=await supabase.storage.from('publish-media').upload(storagePath,file,{upsert:false,contentType:file.type})
+      if(error)throw error
+      const response=await apiFetch('/api/video/assets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({storagePath,fileName:file.name,mimeType:file.type,sizeBytes:file.size})})
+      const payload=await response.json()
+      if(!response.ok)throw new Error(payload.error||'素材登记失败')
+    }
+    $('#materialsFiles').value='';msg.textContent='上传完成。';await loadMaterialsList()
+  }catch(e){msg.textContent='上传失败：'+e.message}
+  finally{btn.disabled=false}
 }
 
 
