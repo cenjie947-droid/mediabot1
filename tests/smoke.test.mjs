@@ -59,3 +59,11 @@ test('API-key-free demo mode uses synthetic content and clearly stays read-only'
   assert.ok(app.includes("if (demoMode) return alert('演示模式为只读状态"), 'mutation handlers must be blocked in demo mode')
   assert.ok(app.includes("id:'demo-content-001'"), 'demo must show sample content')
 })
+
+test('application can boot without Supabase credentials for demo-only testing', async () => {
+  const app = await read('../src/main.js')
+  assert.ok(app.includes('const hasSupabaseConfig = Boolean(SUPABASE_URL && SUPABASE_KEY)'), 'missing credentials must be detected')
+  assert.ok(app.includes("SUPABASE_URL || 'http://127.0.0.1:54321'"), 'client initialization must not crash without URL')
+  assert.ok(app.includes('if (!hasSupabaseConfig) return null'), 'session lookup must skip unconfigured Supabase')
+  assert.ok(app.includes('真实登录需要填写 Supabase 配置'), 'real login must explain missing setup')
+})
