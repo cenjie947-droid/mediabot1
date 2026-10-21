@@ -129,3 +129,11 @@ test('publish worker claims only queued jobs and checks account/content ownershi
   assert.ok(publisher.includes("if(account.status!=='connected')"), 'worker must recheck account authorization')
   assert.ok(publisher.includes('skipped'), 'already-claimed jobs must be skipped')
 })
+
+
+test('publish execution only selects jobs whose scheduled time is due', async () => {
+  const server = await read('../server.mjs')
+  const automation = await read('../automation.mjs')
+  assert.ok(server.includes(".or('scheduled_at.is.null,scheduled_at.lte.'+now)"), 'manual run must not execute future scheduled jobs')
+  assert.ok(automation.includes(".or('scheduled_at.is.null,scheduled_at.lte.'+now)"), 'scheduled worker must wait until scheduled_at is due')
+})
