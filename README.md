@@ -1,91 +1,89 @@
-# MediaBot v7
+# 创作中枢 Creator OS
 
-AI 内容运营 SaaS：真实热点 → AI 评分 → AI 内容生产 → 内容库 → 发布队列 → 抖音官方发布适配 → 云端定时任务 → 日志。
+一个参考成熟内容运营助手工作流、面向 **微信公众号 + 今日头条** 的内容生产与发布 Web 应用。
 
-## v7 完成内容
+> 不是 Binance Square 助手，也不包含 Binance、抖音或小红书业务。旧 MediaBot 的平台代码、雷达、视频剪辑模块和旧迁移已从本分支移除。
 
-- 公网部署准备：Render Web + Cron Blueprint
-- Supabase Auth 公网回跳准备（`PUBLIC_APP_URL`）
-- 默认真实热点源：Google News RSS 四类主题，可通过 `HOT_FEEDS` 覆盖
-- AI 热点评分与 AI 自动内容生产
-- 抖音官方 OAuth 授权适配
-- 抖音视频上传 + `/video/create/` 官方发布适配；必须先上传视频素材并取得 `video.create` 权限
-- 小红书账号接入结构与发布适配器预留；不伪造“模拟发布”，需官方开放平台审核参数
-- 发布队列 `publish_jobs`、私有账号 token、私有 OAuth state
-- `publish-media` 私有 Storage bucket，用户只能访问自己的素材
-- Cron 自动化：抓热点、AI 评分、AI 生产、发布队列
+## 产品结构
+
+- **总览**：内容资产、已发布、待审核、排期、账号状态
+- **创作者台**：标题 / 摘要 / 正文 / 封面，AI 生成、润色、保存草稿、立即发布、定时发布
+- **账号**：多公众号、多头条号管理；敏感配置只在服务端处理
+- **发帖记录**：草稿、排期、已发布、失败统一记录
+- **效果**：阅读、点赞、评论、分享等作品表现
+- **排行榜**：按历史表现查看自己的内容冠军
+- **模板**：公众号深度文章、头条高点击、双平台主稿等可复用模板
+- **素材库**：封面、图片、参考链接统一归档
+- **AI 助手**：选题、标题、正文、润色、内容体检
+- **我的**：工作区和安全设置
+
+## 平台发布
+
+### 微信公众号
+
+使用微信公众号官方接口完成：
+
+`AppID/AppSecret → Access Token → 上传封面 → 新建草稿 → 提交发布`
+
+账号凭据加密保存在 `creator_accounts.secret_payload`，不会发送到浏览器。生产环境请务必设置 `ACCOUNT_ENCRYPTION_KEY`。
+
+### 今日头条
+
+头条没有在本项目里伪造“官方开放 API”。当前设计为 **浏览器自动化桥接适配器**：Creator OS 将标题、正文、封面和作品 ID发送到你配置的桥接服务，由桥接服务使用真实登录态完成发布。这样可以独立替换 Playwright / Chrome 自动化实现，也不会把 Cookie 放进 Creator OS 前端。
+
+社区已有可参考实现，例如 `xc-2000/toutiao-auto-publisher`、`openclaw-cn/toutiao-ops` 等；本项目只借鉴公开的工作流设计，不复制其代码或绕过平台安全机制。
+
+## 环境变量
+
+```text
+VITE_SUPABASE_URL
+VITE_SUPABASE_PUBLISHABLE_KEY
+SUPABASE_URL
+SUPABASE_PUBLISHABLE_KEY
+SUPABASE_SECRET_KEY
+ACCOUNT_ENCRYPTION_KEY
+AI_BASE_URL=https://api.openai.com/v1
+AI_API_KEY
+AI_MODEL=gpt-4o-mini
+PUBLIC_APP_URL
+TOUTIAO_BRIDGE_URL
+```
 
 ## 本地运行
 
-```powershell
-Copy-Item .env.example .env
-# 填入 Supabase Publishable/Secret Key 与 AI_API_KEY
-npm.cmd install
-npm.cmd run build
-npm.cmd start
+```bash
+npm install
+npm run build
+npm start
 ```
 
-打开 `http://localhost:10000`。
+开发模式：
 
-## Render 必填
+```bash
+npm run dev
+```
 
-- `VITE_SUPABASE_URL`
-- `VITE_SUPABASE_PUBLISHABLE_KEY`
-- `SUPABASE_URL`
-- `SUPABASE_PUBLISHABLE_KEY`
-- `SUPABASE_SECRET_KEY`
-- `PUBLIC_APP_URL`（Render 公网地址）
-- `AI_API_KEY`
+## Supabase
 
-抖音真实发布另外需要：
-- `DOUYIN_CLIENT_KEY`
-- `DOUYIN_CLIENT_SECRET`
-- `DOUYIN_REDIRECT_URI`
-- 在抖音开放平台申请并获得 `video.create` 权限
+先执行：
 
-## 安全
+`supabase/migrations/20261022_creator_os.sql`
 
-`.env` 不提交 Git。Supabase Secret Key 和平台 access token 只在服务端使用。`private.social_account_secrets` 不授予 anon/authenticated。
+迁移会建立账号、内容、发布任务、模板、素材和效果数据表，并启用按用户隔离的 RLS。
 
-## Supabase v7 schema
+**注意：** 删除旧迁移文件不会自动删除已经部署到 Supabase 的旧表/旧数据。本次改造针对 GitHub 仓库代码和新版本 schema；如果你还要清理线上 Supabase 中旧 MediaBot 数据，应在确认后单独执行数据库清理迁移。
 
-本版本需要已执行 `v7_real_social_publish` 与 `v7_publish_media_storage` 两个迁移。
+## Render
 
-## 爆款市场雷达（手动数据 MVP）
+`render.yaml` 已配置：
 
-此分支新增「爆款雷达」：手动录入公开视频指标，按同一视频的多次快照计算每小时播放增长，并按赛道汇总样本播放、点赞、评论和转发。支持关注赛道、爆款跟随 / 账号垂直两种生产模式；完播率、平均观看时长和 3/5/10 秒留存仅在你确实从账号后台获得时填写。
+- Web 服务：构建 Vite + 启动 Express
+- Cron：每 5 分钟执行排期发布 worker
 
-### 启用方式
+## 安全原则
 
-1. 在 Supabase SQL Editor 执行 `supabase/migrations/20261020_viral_market_radar.sql`。
-2. 重新构建并部署：`npm run build`，然后按现有方式部署到 Render。
-3. 登录后打开左侧「爆款雷达」，录入视频链接、标题、赛道和公开指标。
-4. 过一段时间后，再录入同一视频的最新播放/互动数据。链接相同会归入同一个视频样本，系统才可以计算增速。
-
-### 数据来源与边界
-
-- 目前没有假设你已获得抖音官方热点 API 权限，也不会伪造全平台视频数、总播放或留存指标。
-- 录入的数据仅代表你收集的样本，不代表抖音全平台。只有一条快照时只显示累计指标；至少两次快照才能计算增长速度。
-- 公开网页、平台创作者后台、官方授权 API 或合法授权的数据供应商可作为后续来源。请遵守平台条款、隐私和数据使用限制；不要绕过登录、验证码、访问控制或反爬机制。
-- 外部公开视频通常无法提供他人视频的完播率、留存曲线和平均观看时长；这些字段应留空，而不是用 AI 猜测。
-
-
-## 自动视频剪辑 MVP（2026-10-21）
-
-新增「自动剪辑」工作台：用户可批量上传自己的视频素材、提供爆款链接和说明、上传参考截图及自有/已授权配乐。服务器从视频抽取关键帧，由视觉模型规划镜头顺序，再使用 FFmpeg 裁剪、竖屏适配、拼接和可选配乐混音；成片保存到私有 Storage，并写入内容库，可继续进入现有发布队列。此流程不调用 AI 视频生成模型。
-
-### 启用步骤
-
-1. 在 Supabase SQL Editor 执行 `supabase/migrations/20261021_video_remix_engine.sql`。
-2. 确认既有私有 Storage bucket `publish-media` 可用，且服务端已配置 `SUPABASE_SECRET_KEY`。
-3. 配置可用的视觉模型 API：`AI_API_KEY`、`AI_BASE_URL`、`AI_MODEL`。默认模型为 `gpt-4o-mini`，实际使用的兼容服务必须支持图像输入。
-4. 重新部署。Render 构建命令使用 `npm install`，因为仓库目前没有提交 package-lock.json。
-5. 登录后打开「自动剪辑」，上传1到12段自己的视频，选择参考截图/配乐，填写爆款链接或分析说明，再点击「开始分析并自动剪辑」。
-
-### 当前 MVP 边界
-
-- 当前版本不会直接读取抖音链接里的完整视频/音频；链接只作为来源记录。分析具体爆款需要上传参考截图并补充说明。后续再扩展合法可用的视频文件导入。
-- 镜头选择依据抽样关键帧和 AI 剪辑计划，不是逐帧动作理解；生成结果必须检查连贯性和声音。
-- 当前支持从用户上传的音乐库中按音乐文件名线索自动挑选一首并混音，也可手动指定；建议音乐文件名包含“悬疑/紧张/治愈/欢快”等情绪关键词。系统目前不会真正听完整首音乐来判断情绪。自动从外部曲库搜歌、歌词字幕/语音转写、自动音画节奏点、精细转场和发布后数据反馈属于后续阶段。
-- 不生成 AI 视频画面。视频画面只来自用户上传的素材；请确保素材和音乐有权使用。
-- 自动发布仍依赖抖音账号已授权且应用获得真实视频发布权限；账号 OAuth 成功不代表已拥有发布权限。
+- 不在前端保存 AppSecret、Cookie、Service Role Key
+- 平台未接入或授权失败时绝不伪报“发布成功”
+- 头条自动化由独立桥接层承接登录态
+- 生产环境必须设置 `ACCOUNT_ENCRYPTION_KEY`
+- AI 输出用于辅助创作，热点事实、数据和引用必须人工核验
