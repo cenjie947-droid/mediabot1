@@ -112,3 +112,11 @@ test('publish queue rejects unauthorized accounts and invalid schedules', async 
   assert.ok(server.includes('内容目标平台与所选账号不一致'), 'content and target platform must match')
   assert.ok(server.includes(".eq('id',content.id).eq('user_id',req.user.id)"), 'content status update must be scoped to the authenticated user')
 })
+
+
+test('Douyin publisher passes its storage client into media retrieval', async () => {
+  const publisher = await read('../publishers.mjs')
+  assert.ok(publisher.includes('async function douyinPublish(admin, job, account, content, secret)'), 'publisher must receive the admin client')
+  assert.ok(publisher.includes('fetchMedia(admin, content.media_urls)'), 'media retrieval must use the passed admin client')
+  assert.ok(publisher.includes('douyinPublish(admin,job,account,content,secret)'), 'publish worker must pass the admin client')
+})
