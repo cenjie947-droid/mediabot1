@@ -137,3 +137,13 @@ test('publish execution only selects jobs whose scheduled time is due', async ()
   assert.ok(server.includes(".or('scheduled_at.is.null,scheduled_at.lte.'+now)"), 'manual run must not execute future scheduled jobs')
   assert.ok(automation.includes(".or('scheduled_at.is.null,scheduled_at.lte.'+now)"), 'scheduled worker must wait until scheduled_at is due')
 })
+
+
+test('cron worker processes due publish jobs independently of user automation rules', async () => {
+  const automation = await read('../automation.mjs')
+  const worker = await read('../worker.mjs')
+  assert.ok(automation.includes('export async function runDuePublishJobs'), 'automation module must expose due publishing worker')
+  assert.ok(automation.includes(".eq('status','queued').or('scheduled_at.is.null,scheduled_at.lte.'+now)"), 'only due queued jobs may be processed')
+  assert.ok(worker.includes('runAutomation, runDuePublishJobs'), 'cron worker must invoke the due publisher')
+  assert.ok(worker.includes('const publishing = await runDuePublishJobs()'), 'every cron run must check the publish queue')
+})
