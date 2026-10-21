@@ -291,8 +291,25 @@ function render() {
   } else if (active === 'materials') {
     renderMaterials(view)
   } else if (active === 'posts') {
-    view.innerHTML = card('发帖记录', `<div class="filter-row"><span>已保存的帖子与内容记录</span><button id="postsCreate">＋ 新建内容</button></div>` + (data.content.map((x) => `<div class="post-record"><div class="post-platform">${esc((x.platform || '内容').slice(0,1).toUpperCase())}</div><div class="post-record-main"><b>${esc(x.title || '未命名内容')}</b><small>${esc(x.platform || '未指定平台')} · ${esc(x.status || '草稿')} · ${x.created_at ? new Date(x.created_at).toLocaleString() : '时间未记录'}</small></div><span class="status-chip">${esc(x.status || '草稿')}</span><button class="secondary" data-post-edit="${esc(x.id)}">编辑</button><button class="secondary" data-post-queue="${esc(x.id)}">加入发布队列</button></div>`).join('') || empty('暂无发帖记录。先去创作者台创建内容。')));
+    view.innerHTML = card('发帖记录', `<div class="filter-row"><span>已保存的帖子与内容记录</span><div class="filter-row"><button id="postsRefresh" class="secondary">刷新发布记录</button><button id="postsCreate">＋ 新建内容</button></div></div>` + (data.content.map((x) => `<div class="post-record"><div class="post-platform">${esc((x.platform || '内容').slice(0,1).toUpperCase())}</div><div class="post-record-main"><b>${esc(x.title || '未命名内容')}</b><small>${esc(x.platform || '未指定平台')} · ${esc(x.status || '草稿')} · ${x.created_at ? new Date(x.created_at).toLocaleString() : '时间未记录'}</small></div><span class="status-chip">${esc(x.status || '草稿')}</span><button class="secondary" data-post-edit="${esc(x.id)}">编辑</button><button class="secondary" data-post-queue="${esc(x.id)}">加入发布队列</button></div>`).join('') || empty('暂无发帖记录。先去创作者台创建内容。')));
     $('#postsCreate').addEventListener('click', () => { editingContentId=null; active='create'; render() })
+    $('#postsRefresh').addEventListener('click', async () => {
+      if (demoMode) return alert('当前是只读演示模式，没有真实发布记录可刷新。')
+      const button=$('#postsRefresh')
+      button.disabled=true
+      button.textContent='刷新中…'
+      try {
+        const response=await apiFetch('/api/publish/jobs?limit=50')
+        const payload=await response.json()
+        if(!response.ok) throw new Error(payload.error || '刷新发布记录失败')
+        data.jobs=Array.isArray(payload.jobs)?payload.jobs:[]
+        render()
+      } catch(error) {
+        alert(error.message || '刷新发布记录失败')
+        button.disabled=false
+        button.textContent='刷新发布记录'
+      }
+    })
     document.querySelectorAll('[data-post-edit]').forEach(button=>button.addEventListener('click',()=>openContentEditor(button.dataset.postEdit)))
     document.querySelectorAll('[data-post-queue]').forEach(button=>button.addEventListener('click',()=>queuePublish(button.dataset.postQueue)))
     const jobStatus = { queued:'排队中', publishing:'发布中', published:'已发布', failed:'发布失败', cancelled:'已取消', needs_review:'需要人工核对' }
