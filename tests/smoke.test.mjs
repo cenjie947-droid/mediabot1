@@ -164,3 +164,13 @@ test('repository includes the core v7 schema migration referenced by deployment 
   assert.ok(sql.includes("values ('publish-media','publish-media',false"), 'media bucket must be private')
   assert.ok(readme.includes('20261022_core_v7_schema.sql'), 'setup docs must list the core migration')
 })
+
+
+test('Render cron has a compatible Node version and Douyin publish credentials', async () => {
+  const pkg = JSON.parse(await read('../package.json'))
+  const render = await read('../render.yaml')
+  assert.ok(pkg.engines?.node && pkg.engines.node.includes('22.6'), 'Node version must support --env-file-if-exists')
+  const cron = render.split('name: mediabot-automation')[1] || ''
+  assert.ok(cron.includes('key: DOUYIN_CLIENT_KEY'), 'cron must receive Douyin client key to publish')
+  assert.ok(cron.includes('key: DOUYIN_CLIENT_SECRET'), 'cron must receive Douyin client secret to publish')
+})
