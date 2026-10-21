@@ -49,7 +49,12 @@ npm.cmd start
 
 ## Supabase v7 schema
 
-本版本需要已执行 `v7_real_social_publish` 与 `v7_publish_media_storage` 两个迁移。
+首次部署请在 Supabase SQL Editor 中依次执行：
+1. `supabase/migrations/20261022_core_v7_schema.sql`（核心表、私有令牌表、私有素材桶与用户隔离策略）。
+2. `supabase/migrations/20261020_viral_market_radar.sql`（爆款雷达）。
+3. `supabase/migrations/20261021_video_remix_engine.sql`（自动剪辑）。
+
+迁移前先确认目标是正确的 Supabase 项目，并备份已有数据库。核心迁移采用 `IF NOT EXISTS`，但不会自动修改已有同名表的全部字段；若已有旧版表结构，请先核对差异再上线。
 
 ## 爆款市场雷达（手动数据 MVP）
 
