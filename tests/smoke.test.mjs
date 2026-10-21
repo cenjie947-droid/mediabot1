@@ -44,3 +44,9 @@ test('placeholder social accounts must never be marked as authorized', async () 
   assert.ok(app.includes('official OAuth callback has completed'), 'authorization must be confirmed by the real OAuth flow')
   assert.ok(app.includes("x.status==='connected'"), 'publishing choices must only include connected accounts')
 })
+
+test('queue UI does not claim a post was published merely because it was queued', async () => {
+  const app = await read('../src/main.js')
+  assert.ok(app.includes('加入队列不等于已发布'), 'queue confirmation must distinguish queued from published')
+  assert.ok(!app.includes("alert('已加入真实发布队列')"), 'misleading success message must be removed')
+})
