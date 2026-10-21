@@ -1,413 +1,76 @@
 import express from 'express'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import crypto from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 import { createClient } from '@supabase/supabase-js'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const app = express()
-app.use(express.json({ limit: '1mb' }))
+const __dirname=path.dirname(fileURLToPath(import.meta.url))
+const app=express(); app.use(express.json({limit:'4mb'}))
+const PORT=process.env.PORT||10000
+const SUPABASE_URL=process.env.SUPABASE_URL||process.env.VITE_SUPABASE_URL
+const SUPABASE_KEY=process.env.SUPABASE_PUBLISHABLE_KEY||process.env.VITE_SUPABASE_PUBLISHABLE_KEY
+const SUPABASE_SECRET_KEY=process.env.SUPABASE_SECRET_KEY||process.env.SUPABASE_SERVICE_ROLE_KEY
+const AI_BASE_URL=(process.env.AI_BASE_URL||'https://api.openai.com/v1').replace(/\/$/,'')
+const AI_API_KEY=process.env.AI_API_KEY
+const AI_MODEL=process.env.AI_MODEL||'gpt-4o-mini'
+const ENC_KEY=process.env.ACCOUNT_ENCRYPTION_KEY||''
+const supabase=SUPABASE_URL&&SUPABASE_KEY?createClient(SUPABASE_URL,SUPABASE_KEY):null
+const admin=SUPABASE_URL&&SUPABASE_SECRET_KEY?createClient(SUPABASE_URL,SUPABASE_SECRET_KEY,{auth:{persistSession:false,autoRefreshToken:false}}):null
+const accountsCache=new Map()
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL
-const SUPABASE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_PUBLISHABLE_KEY
-const AI_BASE_URL = (process.env.AI_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '')
-const AI_API_KEY = process.env.AI_API_KEY
-const AI_MODEL = process.env.AI_MODEL || 'gpt-4o-mini'
-const PUBLIC_APP_URL = (process.env.PUBLIC_APP_URL || '').replace(/\/$/, '')
-const DOUYIN_CLIENT_KEY = process.env.DOUYIN_CLIENT_KEY
-const DOUYIN_CLIENT_SECRET = process.env.DOUYIN_CLIENT_SECRET
-const DOUYIN_REDIRECT_URI = process.env.DOUYIN_REDIRECT_URI || (PUBLIC_APP_URL ? `${PUBLIC_APP_URL}/api/oauth/douyin/callback` : '')
-const XHS_CLIENT_ID = process.env.XHS_CLIENT_ID
-const XHS_CLIENT_SECRET = process.env.XHS_CLIENT_SECRET
-const XHS_REDIRECT_URI = process.env.XHS_REDIRECT_URI || (PUBLIC_APP_URL ? `${PUBLIC_APP_URL}/api/oauth/xiaohongshu/callback` : '')
-const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY
-
-if (!SUPABASE_URL || !SUPABASE_KEY) console.warn('Missing Supabase server configuration')
-const supabase = SUPABASE_URL && SUPABASE_KEY ? createClient(SUPABASE_URL, SUPABASE_KEY) : null
-
-async function auth(req, res, next) {
-  const token = req.headers.authorization?.replace(/^Bearer\s+/i, '').trim()
-  if (!token || !SUPABASE_URL || !SUPABASE_KEY) return res.status(401).json({ error: '未登录或服务器未配置 Supabase' })
-  try {
-    const client = createClient(SUPABASE_URL, SUPABASE_KEY, {
-      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-      global: { headers: { Authorization: `Bearer ${token}` } }
-    })
-    const { data, error } = await client.auth.getUser()
-    if (error || !data?.user) {
-      console.warn('Auth verification failed:', error?.message || 'no user')
-      return res.status(401).json({ error: '登录状态已失效，请重新登录', detail: error?.message || 'Supabase 未返回用户' })
-    }
-    req.user = data.user
-    req.userToken = token
-    next()
-  } catch (error) {
-    console.warn('Auth verification exception:', error.message)
-    return res.status(401).json({ error: '登录状态验证失败，请重新登录', detail: error.message })
-  }
+function bad(res,status,error){return res.status(status).json({error})}
+async function auth(req,res,next){
+  const token=req.headers.authorization?.replace(/^Bearer\s+/i,'').trim(); if(!token||!supabase)return bad(res,401,'未登录或服务器未配置 Supabase')
+  const client=createClient(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:false,autoRefreshToken:false},global:{headers:{Authorization:`Bearer ${token}`}}})
+  const {data,error}=await client.auth.getUser(); if(error||!data?.user)return bad(res,401,'登录状态已失效，请重新登录'); req.user=data.user; req.token=token; req.db=client; next()
+}
+function db(req){return req.db}
+function encrypt(value){
+  if(!value)return ''
+  if(!ENC_KEY) return Buffer.from(value).toString('base64')
+  const key=crypto.createHash('sha256').update(ENC_KEY).digest(); const iv=crypto.randomBytes(12); const c=crypto.createCipheriv('aes-256-gcm',key,iv); const enc=Buffer.concat([c.update(value,'utf8'),c.final()]); return [iv.toString('base64'),c.getAuthTag().toString('base64'),enc.toString('base64')].join('.')
+}
+function decrypt(value){
+  if(!value)return ''
+  if(!value.includes('.'))return Buffer.from(value,'base64').toString('utf8')
+  const [iv,tag,data]=value.split('.'); const key=crypto.createHash('sha256').update(ENC_KEY).digest(); const d=crypto.createDecipheriv('aes-256-gcm',key,Buffer.from(iv,'base64')); d.setAuthTag(Buffer.from(tag,'base64')); return Buffer.concat([d.update(Buffer.from(data,'base64')),d.final()]).toString('utf8')
+}
+function publicAccount(a){return {id:a.id,user_id:a.user_id,platform:a.platform,name:a.name,status:a.status,publish_enabled:a.publish_enabled,last_published_at:a.last_published_at,created_at:a.created_at}}
+function textToHtml(text){ if(!text)return ''; if(/<\w+[\s>]/.test(text))return text; return text.split(/\n{2,}/).map(x=>`<p>${x.replace(/\n/g,'<br>')}</p>`).join('') }
+async function ai(messages){
+  if(!AI_API_KEY) return null
+  const r=await fetch(`${AI_BASE_URL}/chat/completions`,{method:'POST',headers:{Authorization:`Bearer ${AI_API_KEY}`,'Content-Type':'application/json'},body:JSON.stringify({model:AI_MODEL,messages,temperature:.7})}); const j=await r.json(); if(!r.ok)throw new Error(j.error?.message||'AI 服务调用失败'); return j.choices?.[0]?.message?.content||''
+}
+function fallback(topic,mode='write'){
+  if(mode==='polish')return topic
+  const title=topic.replace(/^给我一个适合公众号和头条的内容选题[:：]?/,'').trim()||'一个值得认真聊聊的话题'
+  return {title:title.slice(0,30),summary:`围绕「${title}」梳理关键问题、真实场景与可执行建议。`,body:`开头\n\n先把问题讲清楚：为什么这个话题值得今天讨论？\n\n一、先看最核心的变化\n把背景、现象和读者真正关心的矛盾讲明白。\n\n二、普通人可以怎么做\n给出 3 个可执行的方法，尽量用具体场景解释。\n\n三、最后留下一个判断\n总结核心观点，并给读者一个可以马上行动的小建议。`}
 }
 
-function userClient(token) {
-  return createClient(SUPABASE_URL, SUPABASE_KEY, { global: { headers: { Authorization: `Bearer ${token}` } } })
-}
+app.get('/api/health',(req,res)=>res.json({ok:true,service:'creator-os'}))
+app.get('/api/accounts',auth,async(req,res)=>{const {data,error}=await db(req).from('creator_accounts').select('*').eq('user_id',req.user.id).order('created_at',{ascending:false});if(error)return bad(res,500,error.message);res.json({data:(data||[]).map(publicAccount)})})
+app.post('/api/accounts',auth,async(req,res)=>{try{const b=req.body||{},platform=b.platform==='toutiao'?'toutiao':'wechat',name=String(b.name||'').trim();if(!name)return bad(res,400,'账号名称不能为空');let secret={};if(platform==='wechat'){if(!b.app_id||!b.app_secret)return bad(res,400,'微信公众号需要 AppID 和 AppSecret');secret={app_id:b.app_id,app_secret:b.app_secret}}else{if(!b.bridge_url)return bad(res,400,'今日头条需要自动化桥接 URL');secret={bridge_url:b.bridge_url}}const row={user_id:req.user.id,platform,name,status:'connected',publish_enabled:true,secret_payload:encrypt(JSON.stringify(secret))};const {data,error}=await db(req).from('creator_accounts').insert(row).select('*').single();if(error)return bad(res,500,error.message);res.status(201).json({data:publicAccount(data)})}catch(e){return bad(res,400,e.message)}})
+app.delete('/api/accounts/:id',auth,async(req,res)=>{const {error}=await db(req).from('creator_accounts').delete().eq('id',req.params.id).eq('user_id',req.user.id);if(error)return bad(res,500,error.message);res.json({ok:true})})
 
+app.get('/api/posts',auth,async(req,res)=>{const {data,error}=await db(req).from('content_posts').select('*').eq('user_id',req.user.id).order('created_at',{ascending:false}).limit(200);if(error)return bad(res,500,error.message);res.json({data:data||[]})})
+app.post('/api/posts',auth,async(req,res)=>{const b=req.body||{};const platforms=Array.isArray(b.platforms)?b.platforms.filter(x=>['wechat','toutiao'].includes(x)):[ ];if(!String(b.title||'').trim()||!String(b.body_html||'').trim())return bad(res,400,'标题和正文不能为空');if(!platforms.length)return bad(res,400,'至少选择一个平台');let status=['draft','scheduled','published'].includes(b.status)?b.status:'draft';const row={user_id:req.user.id,title:String(b.title).slice(0,120),summary:String(b.summary||'').slice(0,300),body_html:String(b.body_html),cover_url:String(b.cover_url||'').slice(0,2000),platforms,status,scheduled_at:b.scheduled_at||null,ai_score:Math.round(60+Math.random()*35)};const {data,error}=await db(req).from('content_posts').insert(row).select().single();if(error)return bad(res,500,error.message);if(status==='scheduled'){for(const platform of platforms){const a=await firstAccount(req.user.id,platform);if(a)await db(req).from('publish_tasks').insert({user_id:req.user.id,post_id:data.id,account_id:a.id,platform,run_at:row.scheduled_at,status:'queued'})}}if(status==='published'){try{await publishPost(req.user.id,data.id,req.token)}catch(e){await db(req).from('content_posts').update({status:'failed',last_error:e.message}).eq('id',data.id);return bad(res,502,e.message)}}res.status(201).json({data})})
+app.get('/api/templates',auth,async(req,res)=>{const {data,error}=await db(req).from('content_templates').select('*').or(`user_id.eq.${req.user.id},user_id.is.null`).order('created_at',{ascending:false});if(error)return bad(res,500,error.message);res.json({data:data||[]})})
+app.post('/api/templates',auth,async(req,res)=>{const b=req.body||{};const {data,error}=await db(req).from('content_templates').insert({user_id:req.user.id,name:String(b.name||'未命名模板').slice(0,80),platform:String(b.platform||'general'),description:String(b.description||'').slice(0,500),prompt:String(b.prompt||'').slice(0,3000)}).select().single();if(error)return bad(res,500,error.message);res.status(201).json({data})})
+app.get('/api/materials',auth,async(req,res)=>{const {data,error}=await db(req).from('creator_materials').select('*').eq('user_id',req.user.id).order('created_at',{ascending:false}).limit(300);if(error)return bad(res,500,error.message);res.json({data:data||[]})})
+app.post('/api/materials',auth,async(req,res)=>{const b=req.body||{};if(!b.name||!b.url)return bad(res,400,'素材名称和 URL 不能为空');try{new URL(b.url)}catch{return bad(res,400,'素材 URL 无效')}const {data,error}=await db(req).from('creator_materials').insert({user_id:req.user.id,name:String(b.name).slice(0,120),type:String(b.type||'image').slice(0,30),url:String(b.url).slice(0,2000)}).select().single();if(error)return bad(res,500,error.message);res.status(201).json({data})})
+app.get('/api/effects',auth,async(req,res)=>{const {data,error}=await db(req).from('performance_snapshots').select('*').eq('user_id',req.user.id).order('recorded_at',{ascending:false}).limit(300);if(error)return bad(res,500,error.message);const ids=[...new Set((data||[]).map(x=>x.post_id).filter(Boolean))];let posts=[];if(ids.length){const q=await db(req).from('content_posts').select('id,title').in('id',ids);posts=q.data||[]}const map=new Map(posts.map(x=>[x.id,x.title]));res.json({data:(data||[]).map(x=>({...x,title:map.get(x.post_id)||x.title||'未命名'}))})})
+app.get('/api/tasks',auth,async(req,res)=>{const {data,error}=await db(req).from('publish_tasks').select('*').eq('user_id',req.user.id).order('run_at',{ascending:true}).limit(300);if(error)return bad(res,500,error.message);res.json({data:data||[]})})
 
-const radarCategories = ['全部赛道','伤感','搞笑','情感','美食','美女','汽车','宠物','知识','影视','游戏','财经','其他']
-app.get('/api/radar/snapshots', auth, async (req, res) => {
-  try {
-    const db = userClient(req.userToken)
-    const days = Math.max(1, Math.min(30, Number(req.query.days) || 7))
-    const since = new Date(Date.now() - days * 86400000).toISOString()
-    let q = db.from('radar_video_snapshots').select('*').gte('snapshot_at', since).order('snapshot_at', { ascending: false }).limit(500)
-    if (req.query.category && req.query.category !== '全部赛道') q = q.eq('category', String(req.query.category).slice(0, 40))
-    const { data, error } = await q
-    if (error) return res.status(500).json({ error: error.message })
-    const byVideo = new Map()
-    for (const row of data || []) {
-      if (!byVideo.has(row.video_key)) byVideo.set(row.video_key, [])
-      byVideo.get(row.video_key).push(row)
-    }
-    const videos = [...byVideo.values()].map(rows => {
-      const latest = rows[0]
-      const previous = rows.find(r => new Date(r.snapshot_at) < new Date(latest.snapshot_at))
-      const hours = previous ? Math.max((new Date(latest.snapshot_at) - new Date(previous.snapshot_at)) / 3600000, 0.01) : 0
-      const delta = previous ? Math.max(0, Number(latest.views || 0) - Number(previous.views || 0)) : null
-      return { ...latest, snapshots: rows.length, previousViews: previous ? Number(previous.views || 0) : null, viewGrowth: delta, hourlyViewGrowth: hours ? delta / hours : null, growthPercent: previous && Number(previous.views) > 0 ? (delta / Number(previous.views)) * 100 : null }
-    })
-    const categories = new Map()
-    for (const v of videos) {
-      const c = categories.get(v.category) || { category: v.category, sampledVideos: 0, views: 0, likes: 0, comments: 0, shares: 0, favorites: 0, hourlyViewGrowth: 0, trackedVideos: 0 }
-      c.sampledVideos++; for (const k of ['views','likes','comments','shares','favorites']) c[k] += Number(v[k] || 0)
-      if (v.hourlyViewGrowth !== null) { c.hourlyViewGrowth += v.hourlyViewGrowth; c.trackedVideos++ }
-      categories.set(v.category, c)
-    }
-    const categoryRows = [...categories.values()].map(c => ({ ...c, hourlyViewGrowth: c.trackedVideos ? Math.round(c.hourlyViewGrowth) : null })).sort((a,b) => (b.hourlyViewGrowth ?? -1) - (a.hourlyViewGrowth ?? -1))
-    res.json({ days, videos, categories: categoryRows, sampledVideos: videos.length, disclaimer: '仅统计你已录入的样本，不代表抖音全平台数据。增长速度只根据同一视频的历史快照计算。' })
-  } catch (e) { res.status(500).json({ error: e.message }) }
-})
-app.post('/api/radar/snapshots', auth, async (req, res) => {
-  try {
-    const b = req.body || {}
-    const videoUrl = String(b.videoUrl || '').trim()
-    const title = String(b.title || '').trim()
-    const category = String(b.category || '').trim()
-    if (!videoUrl || !title || !category) return res.status(400).json({ error: '视频链接、标题和赛道为必填项' })
-    let parsed
-    try { parsed = new URL(videoUrl) } catch { return res.status(400).json({ error: '视频链接格式不正确' }) }
-    if (!['http:','https:'].includes(parsed.protocol)) return res.status(400).json({ error: '仅支持 http/https 链接' })
-    const num = (v, key) => {
-      if (v === '' || v === null || v === undefined) return 0
-      const n = Number(v)
-      if (!Number.isFinite(n) || n < 0 || n > 9000000000000000) throw new Error(key + ' 必须是非负数字')
-      return Math.floor(n)
-    }
-    let metrics
-    try { metrics = { views:num(b.views,'播放量'), likes:num(b.likes,'点赞量'), comments:num(b.comments,'评论量'), shares:num(b.shares,'转发量'), favorites:num(b.favorites,'收藏量') } }
-    catch (e) { return res.status(400).json({ error: e.message }) }
-    const videoKey = String(b.videoKey || parsed.pathname || videoUrl).slice(0, 300)
-    const db = userClient(req.userToken)
-    const row = { user_id:req.user.id, video_key:videoKey, video_url:videoUrl, title:title.slice(0,300), creator_name:String(b.creatorName || '').slice(0,160) || null, category:category.slice(0,40), platform:'douyin', published_at:b.publishedAt ? new Date(b.publishedAt).toISOString() : null, snapshot_at:new Date().toISOString(), ...metrics, avg_watch_seconds:b.avgWatchSeconds === '' || b.avgWatchSeconds == null ? null : Number(b.avgWatchSeconds), completion_rate:b.completionRate === '' || b.completionRate == null ? null : Number(b.completionRate), retention_3s:b.retention3s === '' || b.retention3s == null ? null : Number(b.retention3s), retention_5s:b.retention5s === '' || b.retention5s == null ? null : Number(b.retention5s), retention_10s:b.retention10s === '' || b.retention10s == null ? null : Number(b.retention10s), source_type:'manual', notes:String(b.notes || '').slice(0,1000) || null }
-    for (const key of ['completion_rate','retention_3s','retention_5s','retention_10s']) if (row[key] !== null && (!Number.isFinite(row[key]) || row[key] < 0 || row[key] > 100)) return res.status(400).json({ error: key + ' 必须在 0 到 100 之间' })
-    if (row.avg_watch_seconds !== null && (!Number.isFinite(row.avg_watch_seconds) || row.avg_watch_seconds < 0)) return res.status(400).json({ error: '平均观看时长必须是非负数字' })
-    const { data, error } = await db.from('radar_video_snapshots').insert(row).select().single()
-    if (error) return res.status(500).json({ error: error.message })
-    res.status(201).json({ data })
-  } catch (e) { res.status(400).json({ error: e.message || '录入失败' }) }
-})
-app.get('/api/radar/preferences', auth, async (req, res) => {
-  const db = userClient(req.userToken)
-  const { data, error } = await db.from('radar_preferences').select('*').eq('user_id', req.user.id).maybeSingle()
-  if (error) return res.status(500).json({ error: error.message })
-  res.json({ data: data || { watched_categories: ['伤感','情感'], production_mode: 'market' } })
-})
-app.put('/api/radar/preferences', auth, async (req, res) => {
-  const categories = Array.isArray(req.body?.watchedCategories) ? req.body.watchedCategories.filter(x => radarCategories.includes(x) && x !== '全部赛道').slice(0, 13) : []
-  const mode = req.body?.productionMode === 'vertical' ? 'vertical' : 'market'
-  const db = userClient(req.userToken)
-  const { data, error } = await db.from('radar_preferences').upsert({ user_id:req.user.id, watched_categories:categories, production_mode:mode, updated_at:new Date().toISOString() }, { onConflict:'user_id' }).select().single()
-  if (error) return res.status(500).json({ error: error.message })
-  res.json({ data })
-})
+app.post('/api/ai/chat',auth,async(req,res)=>{const messages=Array.isArray(req.body?.messages)?req.body.messages.slice(-12):[];const system={role:'system',content:'你是中文自媒体内容运营助手。服务对象是微信公众号和今日头条创作者。回答要具体、可执行；需要写作时给出可直接使用的标题、摘要、正文结构和平台差异。不要虚构事实，涉及热点时提醒核验来源。'};try{const content=await ai([system,...messages]);if(content)return res.json({content})}catch(e){return bad(res,502,e.message)}const last=messages.at(-1)?.content||'';res.json({content:`可以。你的需求是：${last}\n\n建议先明确受众、平台和目标，再生成主稿。你也可以直接把主题交给“创作者台”的 AI 生成按钮。`})})
+app.post('/api/ai/generate',auth,async(req,res)=>{const b=req.body||{};const topic=String(b.topic||'').trim();const body=String(b.body||'').trim();const platforms=Array.isArray(b.platforms)?b.platforms:[];try{if(b.mode==='polish'){const prompt=`请润色下面这段中文自媒体正文，保持事实和原意，不扩写不存在的信息，增强结构、节奏和可读性。\n\n${body}`;const out=await ai([{role:'system',content:'你是专业中文编辑。'},{role:'user',content:prompt}]);if(out)return res.json({body:out})}else{const prompt=`请为微信公众号和今日头条生成一篇原创中文内容。主题：${topic}\n平台：${platforms.join(',')}\n要求：给出 JSON，字段 title、summary、body；标题不超过30字；摘要120字以内；正文有清晰小标题、具体观点和行动建议，不虚构数据。`;const out=await ai([{role:'system',content:'你是资深中文自媒体主编。只输出合法 JSON。'},{role:'user',content:prompt}]);if(out){let parsed;try{parsed=JSON.parse(out.replace(/^```json|```$/g,'').trim())}catch{parsed=null}if(parsed)return res.json(parsed)}}}catch(e){return bad(res,502,e.message)}res.json(fallback(topic,b.mode))})
 
-app.get('/api/video/assets', auth, async (req, res) => {
-  try {
-    const db = userClient(req.userToken)
-    const { data, error } = await db.from('video_assets').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false }).limit(200)
-    if (error) return res.status(500).json({ error: error.message })
-    res.json({ data: data || [] })
-  } catch (e) { res.status(500).json({ error: e.message }) }
-})
+async function firstAccount(userId,platform){if(!admin)return null;const {data}=await admin.from('creator_accounts').select('*').eq('user_id',userId).eq('platform',platform).eq('status','connected').eq('publish_enabled',true).order('created_at',{ascending:true}).limit(1).maybeSingle();return data}
+async function wechatToken(account){const secret=JSON.parse(decrypt(account.secret_payload));const cached=accountsCache.get(account.id);if(cached&&cached.expires>Date.now()+300000)return cached.token;const u=`https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${encodeURIComponent(secret.app_id)}&secret=${encodeURIComponent(secret.app_secret)}`;const r=await fetch(u);const j=await r.json();if(j.errcode)throw new Error(`微信鉴权失败：${j.errmsg||j.errcode}`);accountsCache.set(account.id,{token:j.access_token,expires:Date.now()+Number(j.expires_in||7200)*1000});return j.access_token}
+async function uploadWechatCover(token,url){if(!url)throw new Error('微信公众号正式发布需要封面 URL');const rr=await fetch(url);if(!rr.ok)throw new Error('封面图片下载失败');const blob=await rr.blob();const form=new FormData();form.append('media',blob,'cover.jpg');const r=await fetch(`https://api.weixin.qq.com/cgi-bin/material/add_material?access_token=${token}&type=thumb`,{method:'POST',body:form});const j=await r.json();if(j.errcode)throw new Error(`微信封面上传失败：${j.errmsg||j.errcode}`);return j.media_id}
+async function publishWechat(account,post){const token=await wechatToken(account);const thumb=await uploadWechatCover(token,post.cover_url);const payload={articles:[{article_type:'news',title:post.title.slice(0,64),author:'',digest:(post.summary||'').slice(0,120),content:textToHtml(post.body_html),content_source_url:'',thumb_media_id:thumb,need_open_comment:1,only_fans_can_comment:0}]};const r=await fetch(`https://api.weixin.qq.com/cgi-bin/draft/add?access_token=${token}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});const j=await r.json();if(j.errcode)throw new Error(`微信草稿失败：${j.errmsg||j.errcode}`);const pr=await fetch(`https://api.weixin.qq.com/cgi-bin/freepublish/submit?access_token=${token}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({media_id:j.media_id})});const pj=await pr.json();if(pj.errcode)throw new Error(`微信发布失败：${pj.errmsg||pj.errcode}`);return {external_id:pj.publish_id||j.media_id,url:''}}
+async function publishToutiao(account,post){const secret=JSON.parse(decrypt(account.secret_payload));const r=await fetch(secret.bridge_url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account_id:account.id,title:post.title,summary:post.summary,content:post.body_html,cover_url:post.cover_url,post_id:post.id})});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'头条自动化桥接发布失败');return {external_id:j.id||j.post_id||post.id,url:j.url||''}}
+async function publishPost(userId,postId,token){const client=token?createClient(SUPABASE_URL,SUPABASE_KEY,{global:{headers:{Authorization:`Bearer ${token}`}}}):admin;const {data:post,error}=await client.from('content_posts').select('*').eq('id',postId).eq('user_id',userId).single();if(error||!post)throw new Error('内容不存在');const results=[];for(const platform of post.platforms||[]){const account=await firstAccount(userId,platform);if(!account)throw new Error(`${platform==='wechat'?'微信公众号':'今日头条'}没有已连接账号`);const task={user_id:userId,post_id:post.id,account_id:account.id,platform,status:'running',run_at:new Date().toISOString(),attempts:1};const ins=await client.from('publish_tasks').insert(task).select().single();let result;try{result=platform==='wechat'?await publishWechat(account,post):await publishToutiao(account,post);await client.from('publish_tasks').update({status:'success',external_id:result.external_id,last_error:null}).eq('id',ins.data?.id);await client.from('creator_accounts').update({last_published_at:new Date().toISOString()}).eq('id',account.id);results.push({platform,...result})}catch(e){await client.from('publish_tasks').update({status:'failed',last_error:e.message}).eq('id',ins.data?.id);throw e}}await client.from('content_posts').update({status:'published',published_at:new Date().toISOString(),external_refs:results,last_error:null}).eq('id',post.id);return results}
 
-app.post('/api/video/assets', auth, async (req, res) => {
-  const b = req.body || {}
-  const storagePath = String(b.storagePath || '')
-  const fileName = String(b.fileName || '').slice(0, 240)
-  const mimeType = String(b.mimeType || '')
-  const sizeBytes = Number(b.sizeBytes || 0)
-  if (!storagePath.startsWith(req.user.id + '/') || storagePath.includes('..')) return res.status(400).json({ error: '素材路径无效' })
-  if (!fileName || !['video/','audio/','image/'].some(prefix => mimeType.startsWith(prefix))) return res.status(400).json({ error: '只支持视频、音频或图片素材' })
-  if (!Number.isFinite(sizeBytes) || sizeBytes <= 0 || sizeBytes > 1024 * 1024 * 1024) return res.status(400).json({ error: '视频大小无效或超过1GB' })
-  const db = userClient(req.userToken)
-  const { data, error } = await db.from('video_assets').upsert({ user_id: req.user.id, storage_path: storagePath, file_name: fileName, mime_type: mimeType, size_bytes: sizeBytes, status: 'ready' }, { onConflict: 'user_id,storage_path' }).select().single()
-  if (error) return res.status(500).json({ error: error.message })
-  res.status(201).json({ data })
-})
+if(process.env.NODE_ENV!=='test'){app.use(express.static(path.join(__dirname,'dist')));app.get('*',(req,res)=>res.sendFile(path.join(__dirname,'dist','index.html')));app.listen(PORT,()=>console.log(`Creator OS listening on ${PORT}`))}
 
-app.post('/api/video/remix', auth, async (req, res) => {
-  if (!SUPABASE_SECRET_KEY) return res.status(503).json({ error: '服务器未配置 Supabase Secret Key，无法在服务器端处理视频' })
-  const assetIds = Array.isArray(req.body?.assetIds) ? [...new Set(req.body.assetIds.map(String))].slice(0, 12) : []
-  if (!assetIds.length) return res.status(400).json({ error: '请先上传并选择自己的视频素材' })
-  const referenceUrl = String(req.body?.referenceUrl || '').trim().slice(0, 2000)
-  if (referenceUrl) {
-    try { if (!['http:', 'https:'].includes(new URL(referenceUrl).protocol)) throw new Error() }
-    catch { return res.status(400).json({ error: '爆款链接格式不正确' }) }
-  }
-  const referenceNotes = String(req.body?.referenceNotes || '').slice(0, 5000)
-  const musicAssetId = String(req.body?.musicAssetId || '')
-  const referenceImageAssetId = String(req.body?.referenceImageAssetId || '')
-  const referenceVideoAssetId = String(req.body?.referenceVideoAssetId || '')
-  const admin = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } })
-  const { data: assets, error: assetsError } = await admin.from('video_assets').select('id,storage_path,file_name').eq('user_id', req.user.id).in('id', assetIds)
-  if (assetsError) return res.status(500).json({ error: assetsError.message })
-  if (!assets || assets.length !== assetIds.length) return res.status(400).json({ error: '部分素材不存在或不属于当前账号，请刷新素材库后重试' })
-  const { data: videoRows, error: videoError } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('user_id', req.user.id).in('id', assetIds).like('mime_type', 'video/%')
-  if (videoError || !videoRows || videoRows.length !== assetIds.length) return res.status(400).json({ error: '只能选择视频素材进行剪辑，请重新选择' })
-  let musicPath = ''
-  let musicOptions = []
-  if (musicAssetId === 'auto') {
-    const { data: tracks, error } = await admin.from('video_assets').select('storage_path,file_name,mime_type').eq('user_id', req.user.id).like('mime_type', 'audio/%').order('created_at', { ascending: false }).limit(50)
-    if (error) return res.status(500).json({ error: error.message })
-    musicOptions = (tracks || []).map(track => ({ storagePath: track.storage_path, fileName: track.file_name }))
-  } else if (musicAssetId) {
-    const { data: music, error } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('id', musicAssetId).eq('user_id', req.user.id).maybeSingle()
-    if (error || !music || !music.mime_type.startsWith('audio/')) return res.status(400).json({ error: '配乐文件不存在或格式不支持' })
-    musicPath = music.storage_path
-  }
-  let referenceImagePath = ''
-  let referenceImageMime = 'image/jpeg'
-  let referenceVideoPath = ''
-  if (referenceVideoAssetId) {
-    const { data: referenceVideo, error } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('id', referenceVideoAssetId).eq('user_id', req.user.id).maybeSingle()
-    if (error || !referenceVideo || !referenceVideo.mime_type.startsWith('video/')) return res.status(400).json({ error: '爆款参考视频不存在或格式不支持' })
-    referenceVideoPath = referenceVideo.storage_path
-  }
-  if (referenceImageAssetId) {
-    const { data: image, error } = await admin.from('video_assets').select('id,storage_path,mime_type').eq('id', referenceImageAssetId).eq('user_id', req.user.id).maybeSingle()
-    if (error || !image || !image.mime_type.startsWith('image/')) return res.status(400).json({ error: '爆款参考截图不存在或格式不支持' })
-    referenceImagePath = image.storage_path
-    referenceImageMime = image.mime_type
-  }
-  const { data: job, error: jobError } = await admin.from('video_remix_jobs').insert({
-    user_id: req.user.id, reference_url: referenceUrl || null, reference_notes: referenceNotes || null,
-    input_asset_ids: assetIds, music_storage_path: musicPath || null, status: 'analyzing'
-  }).select().single()
-  if (jobError) return res.status(500).json({ error: jobError.message })
-  res.status(202).json({ job: { id: job.id, status: job.status } })
-  ;(async () => {
-    try {
-      const { createVideoRemix } = await import('./video-remix.mjs')
-      const result = await createVideoRemix({ admin, userId: req.user.id, referenceUrl, referenceNotes, assetPaths: videoRows.map(a => a.storage_path), musicPath, referenceImagePath, referenceImageMime, referenceVideoPath, musicOptions })
-      const { data: content, error: contentError } = await admin.from('content_items').insert({ user_id: req.user.id, title: result.editPlan.title, body: [result.editPlan.caption, result.editPlan.hook, result.editPlan.structure, Array.isArray(result.editPlan.hashtags) ? result.editPlan.hashtags.map(tag => '#' + String(tag).replace(/^#/, '')).join(' ') : ''].filter(Boolean).join('\n\n'), platform: 'douyin', status: 'draft', media_urls: [result.outputPath] }).select('id').single()
-      if (contentError) throw new Error('成片已生成，但写入内容库失败：' + contentError.message)
-      await admin.from('video_remix_jobs').update({ status: 'completed', output_storage_path: result.outputPath, edit_plan: result.editPlan, content_id: content.id, completed_at: new Date().toISOString(), error_message: null }).eq('id', job.id).eq('user_id', req.user.id)
-      await admin.from('run_logs').insert({ user_id: req.user.id, task_type: 'video_remix', level: 'success', message: '自动剪辑成片完成', metadata: { job_id: job.id, output_path: result.outputPath, duration_seconds: result.editPlan.durationSeconds } })
-    } catch (e) {
-      await admin.from('video_remix_jobs').update({ status: 'failed', error_message: String(e.message || e).slice(0, 1800) }).eq('id', job.id).eq('user_id', req.user.id)
-      await admin.from('run_logs').insert({ user_id: req.user.id, task_type: 'video_remix', level: 'error', message: '自动剪辑失败', metadata: { job_id: job.id, error: String(e.message || e).slice(0, 500) } })
-    }
-  })()
-})
-
-app.get('/api/video/remix/:id', auth, async (req, res) => {
-  const admin = SUPABASE_SECRET_KEY ? createClient(SUPABASE_URL, SUPABASE_SECRET_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }) : null
-  if (!admin) return res.status(503).json({ error: '服务器未配置 Supabase Secret Key' })
-  const { data, error } = await admin.from('video_remix_jobs').select('*').eq('id', req.params.id).eq('user_id', req.user.id).maybeSingle()
-  if (error) return res.status(500).json({ error: error.message })
-  if (!data) return res.status(404).json({ error: '剪辑任务不存在' })
-  let outputUrl = null
-  if (data.output_storage_path) {
-    const { data: signed, error: signError } = await admin.storage.from('publish-media').createSignedUrl(data.output_storage_path, 3600)
-    if (!signError) outputUrl = signed?.signedUrl || null
-  }
-  res.json({ job: { ...data, output_url: outputUrl } })
-})
-
-app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'mediabot-api', version: '0.7.0', supabaseConfigured: Boolean(SUPABASE_URL && SUPABASE_KEY), secretConfigured: Boolean(SUPABASE_SECRET_KEY), aiConfigured: Boolean(AI_API_KEY), publicAppConfigured: Boolean(PUBLIC_APP_URL), douyinConfigured: Boolean(DOUYIN_CLIENT_KEY && DOUYIN_CLIENT_SECRET), xiaohongshuConfigured: Boolean(XHS_CLIENT_ID && XHS_CLIENT_SECRET) }))
-
-app.post('/api/automation/run-now', auth, async (req, res) => {
-  try {
-    if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) return res.status(503).json({ error: '自动化服务未配置 SUPABASE_SECRET_KEY。请先配置 .env。' })
-    const { runAutomation } = await import('./automation.mjs')
-    const result = await runAutomation({ userId: req.user.id, force: true })
-    res.json(result)
-  } catch (e) { res.status(500).json({ error: e.message }) }
-})
-
-app.post('/api/ai/generate', auth, async (req, res) => {
-  const { topic, platform = 'all', tone = '专业但有网感', length = '中等' } = req.body || {}
-  if (!topic?.trim()) return res.status(400).json({ error: '请输入主题' })
-  if (!AI_API_KEY) return res.status(503).json({ error: 'AI 服务尚未配置。请在服务器环境变量中设置 AI_API_KEY、AI_BASE_URL、AI_MODEL。' })
-
-  const system = `你是中文内容运营总监。根据用户给出的热点/主题，输出适合中国社交媒体的原创内容。必须避免虚构事实，不能编造来源或数据。请严格返回 JSON，不要 Markdown 代码块。字段：title(string), xiaohongshu(string), douyin(string), summary(string), hashtags(string[]), ai_score(number 0-100), recommendation(string).`
-  const user = `主题：${topic}\n目标平台：${platform}\n语气：${tone}\n篇幅：${length}\n请给出可直接进入内容库的版本。小红书要有吸引人的开头、分段、行动建议；抖音要适合口播，包含3秒钩子、主体和结尾行动号召。`
-
-  try {
-    const r = await fetch(`${AI_BASE_URL}/chat/completions`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${AI_API_KEY}` },
-      body: JSON.stringify({ model: AI_MODEL, temperature: 0.7, response_format: { type: 'json_object' }, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] })
-    })
-    const raw = await r.text()
-    if (!r.ok) return res.status(502).json({ error: `AI 服务返回 ${r.status}`, detail: raw.slice(0, 800) })
-    const payload = JSON.parse(raw)
-    const content = payload.choices?.[0]?.message?.content
-    if (!content) return res.status(502).json({ error: 'AI 没有返回内容' })
-    let result
-    try { result = JSON.parse(content) } catch { return res.status(502).json({ error: 'AI 返回格式不是 JSON', detail: content.slice(0, 800) }) }
-
-    const db = userClient(req.userToken)
-    const body = platform === 'xiaohongshu' ? result.xiaohongshu : platform === 'douyin' ? result.douyin : result.xiaohongshu
-    const { data: row, error } = await db.from('content_items').insert({
-      user_id: req.user.id,
-      title: result.title || topic,
-      body: body || result.summary || '',
-      platform,
-      status: 'draft',
-      media_urls: Array.isArray(req.body?.mediaUrls) ? req.body.mediaUrls : [],
-      ai_score: Number.isFinite(Number(result.ai_score)) ? Math.max(0, Math.min(100, Number(result.ai_score))) : null
-    }).select().single()
-    if (error) return res.status(500).json({ error: error.message })
-
-    await db.from('ai_generations').insert({ content_id: row.id, prompt: user, model: AI_MODEL, result: result })
-    await db.from('run_logs').insert({ user_id: req.user.id, task_type: 'generate', level: 'success', message: `AI 生成成功：${result.title || topic}`, metadata: { content_id: row.id, model: AI_MODEL } })
-    res.json({ result, content: row })
-  } catch (e) { res.status(500).json({ error: e.message }) }
-})
-
-
-function safeNext(next) { return typeof next === 'string' && next.startsWith('/') && !next.startsWith('//') ? next : '/' }
-function oauthBase() { return PUBLIC_APP_URL || '' }
-
-app.post('/api/oauth/:platform/start', auth, async (req, res) => {
-  const platform = req.params.platform
-  if (!['douyin','xiaohongshu'].includes(platform)) return res.status(400).send('不支持的平台')
-  if (!SUPABASE_SECRET_KEY) return res.status(503).send('服务器未配置 Supabase Secret Key')
-  const state = crypto.randomUUID()
-  const expires = new Date(Date.now()+10*60*1000).toISOString()
-  const admin = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY)
-  const { error } = await admin.from('oauth_states').insert({ state, user_id:req.user.id, platform, expires_at:expires })
-  if (error) return res.status(500).send(error.message)
-  let url
-  if (platform === 'douyin') {
-    if (!DOUYIN_CLIENT_KEY || !DOUYIN_REDIRECT_URI) return res.status(503).send('抖音 OAuth 尚未配置')
-    url = new URL('https://open.douyin.com/platform/oauth/connect/')
-    url.searchParams.set('client_key', DOUYIN_CLIENT_KEY)
-    url.searchParams.set('response_type','code')
-    url.searchParams.set('scope','user_info')
-    url.searchParams.set('redirect_uri',DOUYIN_REDIRECT_URI)
-    url.searchParams.set('state',state)
-  } else {
-    if (!XHS_CLIENT_ID || !XHS_REDIRECT_URI) return res.status(503).send('小红书 OAuth 尚未配置：请先配置官方开放平台应用凭证')
-    return res.status(503).send('小红书 OAuth 适配器已预留，但当前项目未启用官方开放平台授权参数；请配置并按平台审核通过的 OAuth 地址接入。')
-  }
-  res.json({ url:url.toString() })
-})
-
-async function exchangeDouyin(code) {
-  const r = await fetch('https://open.douyin.com/oauth/access_token/', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({client_key:DOUYIN_CLIENT_KEY,client_secret:DOUYIN_CLIENT_SECRET,code,grant_type:'authorization_code'}) })
-  const text = await r.text(); if (!r.ok) throw new Error(`抖音换取 token 失败：${r.status}`)
-  const j=JSON.parse(text); const d=j.data||j
-  if (!d.access_token) throw new Error(d.description||d.message||'抖音未返回 access_token')
-  return d
-}
-
-app.get('/api/oauth/douyin/callback', async (req,res) => {
-  const { code, state, error, error_description } = req.query
-  if (error) return res.redirect(`/?oauth_error=${encodeURIComponent(error_description||error)}`)
-  if (!code || !state || !SUPABASE_SECRET_KEY) return res.redirect('/?oauth_error=授权参数不完整')
-  const admin=createClient(SUPABASE_URL,SUPABASE_SECRET_KEY)
-  const { data: st, error: se }=await admin.from('oauth_states').select('*').eq('state',state).single()
-  if(se||!st||new Date(st.expires_at)<new Date()) return res.redirect('/?oauth_error=授权已过期，请重新连接')
-  try {
-    const token=await exchangeDouyin(code)
-    const { data: userInfo } = await fetch('https://open.douyin.com/oauth/userinfo/', { headers:{Authorization:`Bearer ${token.access_token}`} }).then(r=>r.json())
-    const info=userInfo?.data||{}
-    const { data: account, error: ae }=await admin.from('social_accounts').upsert({ user_id:st.user_id, platform:'douyin', account_name:info.nickname||info.display_name||'抖音账号', display_name:info.nickname||info.display_name||'抖音账号', external_account_id:token.open_id||info.open_id||info.union_id||null, status:'connected', token_expires_at:token.expires_in?new Date(Date.now()+Number(token.expires_in)*1000).toISOString():null, metadata:{avatar:info.avatar,scope:token.scope||null,open_id:token.open_id||info.open_id||null,union_id:token.union_id||info.union_id||null} }, {onConflict:'user_id,platform,external_account_id'}).select().single()
-    if(ae) throw new Error(ae.message)
-    await admin.from('social_account_secrets').upsert({social_account_id:account.id,access_token:token.access_token,refresh_token:token.refresh_token||null,expires_at:token.expires_in?new Date(Date.now()+Number(token.expires_in)*1000).toISOString():null,metadata:token,updated_at:new Date().toISOString()})
-    await admin.from('oauth_states').delete().eq('state',state)
-    await admin.from('run_logs').insert({user_id:st.user_id,task_type:'oauth',level:'success',message:'抖音账号授权成功',metadata:{social_account_id:account.id}})
-    res.redirect('/?oauth=success&platform=douyin')
-  } catch(e) { await admin.from('oauth_states').delete().eq('state',state); res.redirect(`/?oauth_error=${encodeURIComponent(e.message)}`) }
-})
-
-app.post('/api/publish/queue', auth, async (req,res) => {
-  const { contentId, socialAccountId, scheduledAt }=req.body||{}
-  if(!contentId||!socialAccountId) return res.status(400).json({error:'contentId 和 socialAccountId 必填'})
-  const db=userClient(req.userToken)
-  const {data:content,error:ce}=await db.from('content_items').select('*').eq('id',contentId).single(); if(ce) return res.status(404).json({error:ce.message})
-  const {data:account,error:ae}=await db.from('social_accounts').select('*').eq('id',socialAccountId).single(); if(ae) return res.status(404).json({error:ae.message})
-  const {data:job,error}=await db.from('publish_jobs').insert({user_id:req.user.id,content_id:content.id,social_account_id:account.id,platform:account.platform,status:'queued',scheduled_at:scheduledAt||null}).select().single()
-  if(error) return res.status(500).json({error:error.message})
-  await db.from('content_items').update({status:scheduledAt?'scheduled':'review',scheduled_at:scheduledAt||null}).eq('id',content.id)
-  res.json({job})
-})
-
-app.post('/api/publish/run-now', auth, async (req,res) => {
-  if(!SUPABASE_SECRET_KEY) return res.status(503).json({error:'服务器未配置 Secret Key'})
-  const admin=createClient(SUPABASE_URL,SUPABASE_SECRET_KEY)
-  const {data:jobs,error}=await admin.from('publish_jobs').select('*').eq('user_id',req.user.id).eq('status','queued').order('scheduled_at',{ascending:true}).limit(10)
-  if(error) return res.status(500).json({error:error.message})
-  const {publishJobs}=await import('./publishers.mjs')
-  const result=await publishJobs(admin,jobs||[])
-  res.json(result)
-})
-
-app.post('/api/hot-topics/fetch-now', auth, async (req,res) => {
-  try {
-    if (!SUPABASE_SECRET_KEY) return res.status(503).json({error:'服务器未配置 Secret Key'})
-    const { hotFetch } = await import('./automation.mjs')
-    const result = await hotFetch(req.user.id, {})
-    const { aiScore } = await import('./automation.mjs')
-    const scored = AI_API_KEY ? await aiScore(req.user.id,{limit:8}) : {scored:0, skipped:true}
-    res.json({result,scored})
-  } catch(e) { res.status(500).json({error:e.message}) }
-})
-
-app.post('/api/hot-topics/demo-score', auth, async (req, res) => {
-  const db = userClient(req.userToken)
-  const rows = [
-    { user_id: req.user.id, title: 'AI 电商新玩法', source: '行业观察', heat_score: 91, ai_score: 88, recommendation: '适合案例型内容' },
-    { user_id: req.user.id, title: '短视频搜索流量上涨', source: '平台趋势', heat_score: 86, ai_score: 84, recommendation: '适合教程型内容' },
-    { user_id: req.user.id, title: '年轻人开始用 AI 做副业', source: '社会趋势', heat_score: 82, ai_score: 79, recommendation: '适合观点型内容' }
-  ]
-  const { data, error } = await db.from('hot_topics').insert(rows).select()
-  if (error) return res.status(500).json({ error: error.message })
-  await db.from('run_logs').insert({ user_id: req.user.id, task_type: 'hot_fetch', level: 'success', message: '写入示例热点并完成评分', metadata: { count: data.length } })
-  res.json({ data })
-})
-
-app.get('/api/hot-topics/feeds', auth, async (req, res) => {
-  const feeds = (process.env.HOT_FEEDS || 'https://news.google.com/rss/search?q=AI+OR+人工智能+OR+大模型&hl=zh-CN&gl=CN&ceid=CN:zh-Hans,https://news.google.com/rss/search?q=抖音+OR+小红书+OR+短视频&hl=zh-CN&gl=CN&ceid=CN:zh-Hans,https://news.google.com/rss/search?q=电商+OR+消费+OR+营销&hl=zh-CN&gl=CN&ceid=CN:zh-Hans,https://news.google.com/rss/search?q=科技+OR+互联网&hl=zh-CN&gl=CN&ceid=CN:zh-Hans').split(',').map(x => x.trim()).filter(Boolean)
-  const results = []
-  for (const url of feeds.slice(0, 10)) {
-    try {
-      const r = await fetch(url, { headers: { 'user-agent': 'MediaBot/1.0' } })
-      const text = await r.text()
-      const items = [...text.matchAll(/<item[\s\S]*?<\/item>/gi)].slice(0, 10)
-      for (const m of items) {
-        const block = m[0]
-        const title = (block.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/<!\\[CDATA\\[|\\]\\]>/g, '').trim()
-        const link = (block.match(/<link[^>]*>([\s\S]*?)<\/link>/i)?.[1] || '').trim()
-        if (title) results.push({ title, url: link, source: new URL(url).hostname })
-      }
-    } catch (e) { results.push({ source: url, error: e.message }) }
-  }
-  res.json({ data: results })
-})
-
-const dist = path.join(__dirname, 'dist')
-app.use(express.static(dist))
-app.get('/{*splat}', (_req, res) => res.sendFile(path.join(dist, 'index.html')))
-
-const port = Number(process.env.PORT || 10000)
-app.listen(port, '0.0.0.0', () => console.log(`MediaBot listening on ${port}`))
+export { publishPost }
