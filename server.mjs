@@ -244,12 +244,12 @@ app.post('/api/automation/run-now', auth, async (req, res) => {
 })
 
 app.post('/api/ai/generate', auth, async (req, res) => {
-  const { topic, platform = 'all', tone = '专业但有网感', length = '中等' } = req.body || {}
+  const { topic, platform = 'all', tone = '专业但有网感', length = '中等', requirements = '' } = req.body || {}
   if (!topic?.trim()) return res.status(400).json({ error: '请输入主题' })
   if (!AI_API_KEY) return res.status(503).json({ error: 'AI 服务尚未配置。请在服务器环境变量中设置 AI_API_KEY、AI_BASE_URL、AI_MODEL。' })
 
   const system = `你是中文内容运营总监。根据用户给出的热点/主题，输出适合中国社交媒体的原创内容。必须避免虚构事实，不能编造来源或数据。请严格返回 JSON，不要 Markdown 代码块。字段：title(string), xiaohongshu(string), douyin(string), summary(string), hashtags(string[]), ai_score(number 0-100), recommendation(string).`
-  const user = `主题：${topic}\n目标平台：${platform}\n语气：${tone}\n篇幅：${length}\n请给出可直接进入内容库的版本。小红书要有吸引人的开头、分段、行动建议；抖音要适合口播，包含3秒钩子、主体和结尾行动号召。`
+  const user = `主题：${topic}\n目标平台：${platform}\n语气：${tone}\n篇幅：${length}\n用户补充要求：${String(requirements || '').trim() || '无'}\n请给出可直接进入内容库的版本。小红书要有吸引人的开头、分段、行动建议；抖音要适合口播，包含3秒钩子、主体和结尾行动号召。`
 
   try {
     const r = await fetch(`${AI_BASE_URL}/chat/completions`, {
