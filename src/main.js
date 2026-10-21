@@ -140,6 +140,7 @@ async function requireSession() {
 }
 
 async function apiFetch(url, options = {}) {
+  if (demoMode) throw new Error('演示模式为只读状态，请登录真实账号后再执行此操作。')
   const session = await requireSession()
   const headers = new Headers(options.headers || {})
   headers.set('Authorization', `Bearer ${session.access_token}`)
@@ -416,6 +417,7 @@ async function loadMaterialsList() {
 }
 
 async function uploadMaterials(event) {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   event.preventDefault()
   const files=[...($('#materialsFiles').files||[])],msg=$('#materialsUploadMsg'),btn=$('#materialsUploadBtn')
   if(!files.length)return
@@ -513,6 +515,7 @@ async function renderRemixLab(view) {
 }
 
 async function uploadRemixFiles({ quiet = false } = {}) {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   const button=$('#uploadRemixFiles'),msg=$('#remixUploadMsg')
   const uploaded={videoIds:[],referenceVideoId:'',imageId:'',musicId:''}
   const videoFiles=[...($('#remixVideoFiles').files||[])], referenceVideoFile=$('#remixReferenceVideo')?.files?.[0], imageFile=$('#remixReferenceImage').files?.[0], musicFile=$('#remixMusicFile').files?.[0]
@@ -566,6 +569,7 @@ async function refreshRemixAssets() {
 }
 
 async function startRemixJob(event) {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   event.preventDefault()
   const button=$('#startRemixBtn'),status=$('#remixJobStatus')
   button.disabled=true;button.textContent='上传素材并开始分析…';status.textContent='正在准备素材，然后自动分析画面、规划剪辑并生成成片。'
@@ -621,6 +625,7 @@ async function refreshRecentRemixes() {
 }
 
 async function saveRadarPreferences() {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   try {
     const watchedCategories=[...document.querySelectorAll('[data-watch-category]:checked')].map(x=>x.dataset.watchCategory)
     const {error}=await supabase.from('radar_preferences').upsert({user_id:user.id,watched_categories:watchedCategories,production_mode:$('#radarMode').value,updated_at:new Date().toISOString()},{onConflict:'user_id'})
@@ -630,6 +635,7 @@ async function saveRadarPreferences() {
 }
 
 async function saveRadarSnapshot(event) {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   event.preventDefault()
   const button=$('#saveRadarVideo'),msg=$('#radarFormMsg'),val=id=>$('#'+id)?.value??''
   button.disabled=true;button.textContent='保存中…';msg.textContent=''
@@ -693,12 +699,15 @@ async function uploadMediaIfAny() {
 }
 
 async function fetchRealHot(){
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   try{ const r=await apiFetch('/api/hot-topics/fetch-now',{method:'POST'}); const p=await r.json(); if(!r.ok) throw new Error(p.error||'抓取失败'); alert(`真实热点抓取 ${p.result?.fetched??0} 条，新增 ${p.result?.inserted??0} 条，AI 已评分 ${p.scored?.scored??0} 条`); await load() }catch(e){alert(e.message)}
 }
 async function scoreHot(){
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   try{ const r=await apiFetch('/api/hot-topics/fetch-now',{method:'POST'}); const p=await r.json(); if(!r.ok) throw new Error(p.error||'评分失败'); alert(`已处理热点：新增 ${p.result?.inserted??0}，AI 评分 ${p.scored?.scored??0}`); await load() }catch(e){alert(e.message)}
 }
 async function startOAuth(platform){
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   if(platform==='xiaohongshu') return alert('小红书真实发布需要官方开放平台应用审核通过后的 Client ID/Secret 与发布权限。v7 已预留安全适配器。')
   try{ const r=await apiFetch('/api/oauth/douyin/start',{method:'POST'}); const p=await r.json(); if(!r.ok) throw new Error(p.error||'OAuth 启动失败'); window.location.href=p.url }catch(e){alert(e.message)}
 }
@@ -709,6 +718,7 @@ function goCreate() {
 }
 
 async function addDemoHot() {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   try {
     const response = await apiFetch('/api/hot-topics/demo-score', { method: 'POST' })
     const payload = await response.json()
@@ -720,6 +730,7 @@ async function addDemoHot() {
 }
 
 async function runAutomationNow() {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   try {
     const response = await apiFetch('/api/automation/run-now', { method: 'POST' })
     const payload = await response.json()
@@ -732,6 +743,7 @@ async function runAutomationNow() {
 }
 
 async function seedAutomationTasks() {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   try {
     const rows = [
       { user_id: user.id, name: '自动抓取热点', task_type: 'hot_fetch', cron_expression: '0 * * * *', next_run_at: new Date().toISOString(), enabled: true, config: {} },
@@ -749,6 +761,7 @@ async function seedAutomationTasks() {
 }
 
 async function queuePublish(contentId){
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   const accounts=data.accounts.filter(x=>x.status==='connected')
   if(!accounts.length) return alert('请先连接抖音/小红书账号')
   const labels=accounts.map((a,i)=>`${i+1}. ${a.platform==='douyin'?'抖音':'小红书'} - ${a.account_name||''}`).join('\n')
@@ -761,6 +774,7 @@ async function queuePublish(contentId){
 }
 
 async function addAccount(platform) {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   // A database row is not proof of platform authorization. Never mark an account
   // connected unless the official OAuth callback has completed and tokens are stored.
   try {
