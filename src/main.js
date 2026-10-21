@@ -27,6 +27,7 @@ const pages = [
 let user = null
 let demoMode = false
 let active = 'dashboard'
+let editingContentId = null
 let data = { hot: [], content: [], tasks: [], logs: [], accounts: [], radar: [], radarPrefs: { watched_categories: ['伤感','情感'], production_mode: 'market' } }
 let radarCategory = '全部赛道'
 const radarCategories = ['伤感','搞笑','情感','美食','美女','汽车','宠物','知识','影视','游戏','财经','其他']
@@ -280,8 +281,9 @@ function render() {
   } else if (active === 'materials') {
     renderMaterials(view)
   } else if (active === 'posts') {
-    view.innerHTML = card('发帖记录', `<div class="filter-row"><span>已保存的帖子与内容记录</span><button id="postsCreate">＋ 新建内容</button></div>` + (data.content.map((x) => `<div class="post-record"><div class="post-platform">${esc((x.platform || '内容').slice(0,1).toUpperCase())}</div><div class="post-record-main"><b>${esc(x.title || '未命名内容')}</b><small>${esc(x.platform || '未指定平台')} · ${esc(x.status || '草稿')} · ${x.created_at ? new Date(x.created_at).toLocaleString() : '时间未记录'}</small></div><span class="status-chip">${esc(x.status || '草稿')}</span><button class="secondary" data-post-queue="${esc(x.id)}">加入发布队列</button></div>`).join('') || empty('暂无发帖记录。先去创作者台创建内容。')));
-    $('#postsCreate').addEventListener('click', () => { active='create'; render() })
+    view.innerHTML = card('发帖记录', `<div class="filter-row"><span>已保存的帖子与内容记录</span><button id="postsCreate">＋ 新建内容</button></div>` + (data.content.map((x) => `<div class="post-record"><div class="post-platform">${esc((x.platform || '内容').slice(0,1).toUpperCase())}</div><div class="post-record-main"><b>${esc(x.title || '未命名内容')}</b><small>${esc(x.platform || '未指定平台')} · ${esc(x.status || '草稿')} · ${x.created_at ? new Date(x.created_at).toLocaleString() : '时间未记录'}</small></div><span class="status-chip">${esc(x.status || '草稿')}</span><button class="secondary" data-post-edit="${esc(x.id)}">编辑</button><button class="secondary" data-post-queue="${esc(x.id)}">加入发布队列</button></div>`).join('') || empty('暂无发帖记录。先去创作者台创建内容。')));
+    $('#postsCreate').addEventListener('click', () => { editingContentId=null; active='create'; render() })
+    document.querySelectorAll('[data-post-edit]').forEach(button=>button.addEventListener('click',()=>openContentEditor(button.dataset.postEdit)))
     document.querySelectorAll('[data-post-queue]').forEach(button=>button.addEventListener('click',()=>queuePublish(button.dataset.postQueue)))
   } else if (active === 'effects') {
     const published = data.content.filter(x => ['published','posted','success','completed'].includes(String(x.status || '').toLowerCase())).length
@@ -299,15 +301,16 @@ function render() {
   } else if (active === 'hot') {
     renderRadar(view)
   } else if (active === 'create') {
-    view.innerHTML = card('AI 自动写文案', `
+    const editingContent = editingContentId ? data.content.find(x => String(x.id) === String(editingContentId)) : null
+    view.innerHTML = card(editingContent ? '编辑已保存内容' : 'AI 自动写文案', `
       <form id="contentForm" class="form">
-        <input id="ctitle" placeholder="输入热点 / 主题，例如：AI 电商新玩法" required>
+        <input id="ctitle" placeholder="输入热点 / 主题，例如：AI 电商新玩法" value="${esc(editingContent?.title || '')}" required>
         <select id="platform"><option value="all">全平台</option><option value="xiaohongshu">小红书</option><option value="douyin">抖音</option></select>
         <select id="tone"><option>专业但有网感</option><option>轻松口语化</option><option>观点犀利</option><option>干货教程</option></select>
         <select id="length"><option>中等</option><option>短</option><option>长</option></select>
-        <textarea id="body" placeholder="补充你的写作要求（可选）"></textarea>
+        <textarea id="body" placeholder="补充你的写作要求（可选）">${esc(editingContent?.body || '')}</textarea>
         <label>抖音视频素材（发布抖音时必填）<input id="mediaFile" type="file" accept="video/mp4,video/webm"></label>
-        <button id="generateBtn" type="submit">✨ AI 真正生成</button>
+        <button id="generateBtn" type="submit">${editingContent ? '保存修改' : '✨ AI 真正生成'}</button>
         <div id="aiResult"></div>
       </form>`)
   } else if (active === 'remix') {
@@ -655,6 +658,8 @@ async function saveRadarSnapshot(event) {
   finally { button.disabled=false;button.textContent='保存本次快照' }
 }
 
+function openContentEditor(id) { if (demoMode) return alert('演示模式为只读状态，不能编辑样例内容。'); const item=data.content.find(x=>String(x.id)===String(id)); if(!item) return alert('找不到这条内容，请刷新后重试。'); editingContentId=item.id; active='create'; render() }
+
 function bindForms() {
   const form = $('#contentForm')
   if (!form) return
@@ -662,6 +667,11 @@ function bindForms() {
     event.preventDefault()
     const button = $('#generateBtn')
     const result = $('#aiResult')
+    if (editingContentId) {
+      if (demoMode) { result.innerHTML='<div class="error">演示模式为只读状态，无法保存修改。</div>'; return }
+      button.disabled=true; button.textContent='正在保存…'
+      try { const {error}=await supabase.from('content_items').update({title:$('#ctitle').value.trim(),body:$('#body').value,platform:$('#platform').value}).eq('id',editingContentId).eq('user_id',user.id); if(error) throw error; editingContentId=null; alert('内容修改已保存'); await load(); active='library'; render() } catch(error) { result.innerHTML=`<div class="error">${esc(error.message)}</div>` } finally { button.disabled=false; button.textContent='保存修改' }; return
+    }
     button.disabled = true
     button.textContent = 'AI 正在生成…'
     result.innerHTML = ''
