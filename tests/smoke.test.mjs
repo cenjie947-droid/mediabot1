@@ -221,3 +221,12 @@ test('ambiguous publish outcome warns users not to retry blindly', async () => {
   assert.ok(main.includes("job.status === 'needs_review'"), 'manual-review state must trigger a dedicated warning')
   assert.ok(main.includes('不要直接重试，以免重复发布'), 'warning must explain duplicate-publish risk')
 })
+
+
+test('publish queue request reuses an existing queued job and repairs partial content updates', async () => {
+  const server = await read('../server.mjs')
+  assert.ok(server.includes(".eq('status','queued').limit(1).maybeSingle()"), 'existing queued task must be checked before inserting')
+  assert.ok(server.includes('let job=existing'), 'existing queue record should be reused')
+  assert.ok(server.includes('alreadyQueued:Boolean(existing)'), 'response should indicate an idempotent repeat')
+  assert.ok(server.includes('Heal content metadata even when a previous request created the queue row'), 'retry must repair content status after a partial failure')
+})
