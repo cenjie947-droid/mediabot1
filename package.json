@@ -8,7 +8,7 @@
     "build": "vite build",
     "start": "node server.mjs",
     "preview": "vite preview",
-    "automation": "node --env-file=.env worker.mjs",
+    "automation": "node --env-file-if-exists=.env worker.mjs",
     "test": "node --test"
   },
   "dependencies": {
