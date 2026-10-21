@@ -177,3 +177,12 @@ test('Render cron has a compatible Node version and Douyin publish credentials',
   assert.ok(cron.includes('key: DOUYIN_CLIENT_KEY'), 'cron must receive Douyin client key to publish')
   assert.ok(cron.includes('key: DOUYIN_CLIENT_SECRET'), 'cron must receive Douyin client secret to publish')
 })
+
+
+test('ambiguous successful platform publish requires review instead of retryable failure', async () => {
+  const publisher = await read('../publishers.mjs')
+  const migration = await read('../supabase/migrations/20261022_core_v7_schema.sql')
+  assert.ok(publisher.includes("message.includes('平台已返回成功') ? 'needs_review' : 'failed'"), 'uncertain success must not be marked as an ordinary failed job')
+  assert.ok(migration.includes("'needs_review'"), 'database status constraint must allow review state')
+  assert.ok(publisher.includes(".eq('id',job.id).eq('status','publishing')"), 'status update must only affect the job currently claimed by this worker')
+})
