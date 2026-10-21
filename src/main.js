@@ -300,7 +300,7 @@ function render() {
       const content = data.content.find(item => String(item.id) === String(job.content_id))
       const label = jobStatus[job.status] || job.status || '未知状态'
       const schedule = job.scheduled_at ? new Date(job.scheduled_at).toLocaleString() : '立即发布队列'
-      const detail = job.error_message ? '<small class="publish-job-error">' + esc(job.error_message) + '</small>' : ''
+      const detail = (job.error_message ? '<small class="publish-job-error">' + esc(job.error_message) + '</small>' : '') + (job.status === 'needs_review' ? '<small class="publish-job-error">请先核对平台作品记录，不要直接重试，以免重复发布。</small>' : '')
       const publishedAt = job.published_at ? ' · ' + new Date(job.published_at).toLocaleString() : ''
       return '<div class="post-record"><div class="post-record-main"><b>' + esc(content?.title || '内容记录已不可用') + '</b><small>' + esc(job.platform || '未指定平台') + ' · ' + esc(schedule) + publishedAt + '</small>' + detail + '</div><span class="status-chip">' + esc(label) + '</span></div>'
     }).join('')
