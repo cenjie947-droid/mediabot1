@@ -327,23 +327,23 @@ function renderAIStudio(view) {
       <button type="submit" id="aiStudioSubmit">生成内容草稿</button><div id="aiStudioMsg" role="status"></div>
     </form></div><div class="card ai-side-card"><h3>创作小建议</h3><div class="ai-tip"><b>先明确目标</b><p>说明内容要解决的问题，以及希望读者看完后做什么。</p></div><div class="ai-tip"><b>加入真实细节</b><p>补充自己的经历、产品信息或实际素材，避免空泛表达。</p></div><div class="ai-tip"><b>发布前检查</b><p>确认事实、版权、平台规范和素材授权。</p></div><button id="aiStudioTemplates" class="secondary">浏览创作模板</button></div></div>`
   $('#aiStudioTemplates').addEventListener('click',()=>{active='templates';render()})
-  $('#aiStudioForm').addEventListener('submit',async e=>{
+  $('#aiStudioForm').addEventListener('submit',e=>{
     e.preventDefault()
     const topic=$('#aiStudioTopic').value.trim()
-    const btn=$('#aiStudioSubmit'),msg=$('#aiStudioMsg')
-    btn.disabled=true;btn.textContent='正在生成…';msg.textContent='正在请求已配置的 AI 服务。'
-    try{
-      const response=await apiFetch('/api/content/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topic,title:topic,platform:$('#aiStudioPlatform').value,contentType:$('#aiStudioType').value,tone:$('#aiStudioTone').value,length:$('#aiStudioLength').value,notes:$('#aiStudioNotes').value})})
-      const payload=await response.json()
-      if(!response.ok) throw new Error(payload.error||'生成失败')
-      msg.textContent='生成请求完成。请前往内容库查看已保存结果。'
-      await load()
-    }catch(err){
-      msg.textContent='当前生成接口未完成或 AI 服务未配置：'+err.message+'。可以先使用“AI 写文案”现有页面。'
-      const fallback=document.createElement('button');fallback.type='button';fallback.className='secondary';fallback.textContent='打开现有 AI 写文案';fallback.onclick=()=>{active='create';render();const title=$('#ctitle');if(title)title.value=topic;const body=$('#body');if(body)body.value=$('#aiStudioNotes')?.value||''}
-      msg.appendChild(document.createTextNode(' '));msg.appendChild(fallback)
-    }finally{btn.disabled=false;btn.textContent='生成内容草稿'}
-  })
+    const platform=$('#aiStudioPlatform').value
+    const type=$('#aiStudioType').value
+    const tone=$('#aiStudioTone').value
+    const length=$('#aiStudioLength').value
+    const notes=$('#aiStudioNotes').value.trim()
+    active='create';render()
+    if($('#ctitle')) $('#ctitle').value=topic
+    if($('#platform')) $('#platform').value=platform
+    if($('#tone')) $('#tone').value=tone
+    if($('#length')) $('#length').value=length
+    if($('#body')) $('#body').value=[type,notes].filter(Boolean).join('。')
+    const result=$('#aiResult')
+    if(result) result.textContent='主题和创作要求已带入 AI 写文案页面。点击“AI 真正生成”开始生成。'
+  }))
 }
 
 async function renderMaterials(view) {
