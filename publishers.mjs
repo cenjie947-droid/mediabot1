@@ -45,7 +45,7 @@ export async function publishJobs(admin,jobs){
       if(!claimed){skipped++;results.push({job:job.id,ok:false,skipped:true,reason:'任务已被处理或不再处于排队状态'});continue}
       const {data:account}=await admin.from('social_accounts').select('*').eq('id',job.social_account_id).single()
       const {data:content}=await admin.from('content_items').select('*').eq('id',job.content_id).single()
-      const {data:secret}=await admin.schema('private').from('social_account_secrets').select('*').eq('social_account_id',job.social_account_id).single()
+      const {data:secret}=await admin.from('social_account_secrets').select('*').eq('social_account_id',job.social_account_id).single()
       if(!account||!content) throw new Error('账号或内容不存在')
       if(account.user_id!==job.user_id||content.user_id!==job.user_id) throw new Error('发布任务关联的账号或内容不属于该用户')
       if(account.status!=='connected') throw new Error('账号授权状态无效，请重新完成官方授权')
