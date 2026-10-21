@@ -367,7 +367,8 @@ app.post('/api/publish/queue', auth, async (req,res) => {
 app.post('/api/publish/run-now', auth, async (req,res) => {
   if(!SUPABASE_SECRET_KEY) return res.status(503).json({error:'服务器未配置 Secret Key'})
   const admin=createClient(SUPABASE_URL,SUPABASE_SECRET_KEY)
-  const {data:jobs,error}=await admin.from('publish_jobs').select('*').eq('user_id',req.user.id).eq('status','queued').order('scheduled_at',{ascending:true}).limit(10)
+  const now=new Date().toISOString()
+  const {data:jobs,error}=await admin.from('publish_jobs').select('*').eq('user_id',req.user.id).eq('status','queued').or('scheduled_at.is.null,scheduled_at.lte.'+now).order('scheduled_at',{ascending:true}).limit(10)
   if(error) return res.status(500).json({error:error.message})
   const {publishJobs}=await import('./publishers.mjs')
   const result=await publishJobs(admin,jobs||[])
