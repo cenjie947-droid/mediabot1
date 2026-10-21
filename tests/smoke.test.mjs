@@ -37,3 +37,10 @@ test('scheduling UI validates future time before writing', async () => {
   assert.ok(app.includes('scheduled_at:null'), 'schedule cancellation must clear scheduled_at')
   assert.ok(app.includes("eq('user_id',user.id)"), 'updates must be scoped to current user')
 })
+
+test('placeholder social accounts must never be marked as authorized', async () => {
+  const app = await read('../src/main.js')
+  assert.ok(app.includes("status: 'pending'"), 'placeholder account records must remain pending')
+  assert.ok(app.includes('official OAuth callback has completed'), 'authorization must be confirmed by the real OAuth flow')
+  assert.ok(app.includes("x.status==='connected'"), 'publishing choices must only include connected accounts')
+})
