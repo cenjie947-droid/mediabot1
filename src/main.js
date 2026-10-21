@@ -17,15 +17,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 })
 
 const pages = [
-  ['dashboard', 'Dashboard'],
-  ['hot', '爆款雷达'],
-  ['remix', '自动剪辑'],
-  ['create', 'AI 写文案'],
-  ['library', '内容库'],
-  ['schedule', '发布计划'],
-  ['accounts', '账号接入'],
-  ['tasks', '云端任务'],
-  ['logs', '运行日志']
+  ['dashboard', '总览'], ['studio', '创作者台'], ['accounts', '广场账号'], ['posts', '发帖记录'],
+  ['effects', '效果分析'], ['leaderboard', '排行榜'], ['templates', '模板中心'], ['materials', '素材库'], ['ai', 'AI 助手'], ['me', '个人中心'],
+  ['hot', '爆款雷达'], ['remix', '自动剪辑'], ['create', 'AI 写文案'], ['library', '内容库'], ['schedule', '发布计划'], ['tasks', '云端任务'], ['logs', '运行日志']
 ]
 
 let user = null
@@ -77,10 +71,10 @@ $('#app').innerHTML = `
 
 const nav = $('#nav')
 const navGroups = [
-  { title: '工作台', ids: ['dashboard'] },
-  { title: '发现与创作', ids: ['hot', 'create', 'remix', 'library'] },
-  { title: '发布与自动化', ids: ['schedule', 'accounts', 'tasks'] },
-  { title: '系统', ids: ['logs'] }
+  { title: '工作台', ids: ['dashboard', 'studio', 'posts', 'effects', 'leaderboard'] },
+  { title: '内容创作', ids: ['hot', 'ai', 'templates', 'materials', 'remix'] },
+  { title: '账号与发布', ids: ['accounts', 'schedule', 'tasks'] },
+  { title: '账户', ids: ['me', 'logs'] }
 ]
 for (const group of navGroups) {
   const section = document.createElement('div')
@@ -238,6 +232,28 @@ function render() {
     $('#viewLibrary').addEventListener('click', () => { active='library'; render() })
     $('#viewHot').addEventListener('click', () => { active='hot'; render() })
     $('#viewTasks').addEventListener('click', () => { active='tasks'; render() })
+  } else if (active === 'studio') {
+    active = 'create'; render(); return
+  } else if (active === 'ai') {
+    active = 'create'; render(); return
+  } else if (active === 'materials') {
+    active = 'library'; render(); return
+  } else if (active === 'posts') {
+    view.innerHTML = card('发帖记录', `<div class="filter-row"><span>已保存的帖子与内容记录</span><button id="postsCreate">＋ 新建内容</button></div>` + (data.content.map((x) => `<div class="post-record"><div class="post-platform">${esc((x.platform || '内容').slice(0,1).toUpperCase())}</div><div class="post-record-main"><b>${esc(x.title || '未命名内容')}</b><small>${esc(x.platform || '未指定平台')} · ${esc(x.status || '草稿')} · ${x.created_at ? new Date(x.created_at).toLocaleString() : '时间未记录'}</small></div><span class="status-chip">${esc(x.status || '草稿')}</span></div>`).join('') || empty('暂无发帖记录。先去创作者台创建内容。')));
+    $('#postsCreate').addEventListener('click', () => { active='create'; render() })
+  } else if (active === 'effects') {
+    const published = data.content.filter(x => ['published','posted','success','completed'].includes(String(x.status || '').toLowerCase())).length
+    const drafts = data.content.filter(x => ['draft','ready','generated'].includes(String(x.status || '').toLowerCase())).length
+    view.innerHTML = `<div class="page-intro"><span class="eyebrow dark-eyebrow">PERFORMANCE</span><h1>效果分析</h1><p>汇总当前 MediaBot 已保存的数据。未接入平台统计 API 的指标不会编造。</p></div><div class="stats"><div class="stat"><span>内容总数</span><b>${data.content.length}</b><small>已保存内容</small></div><div class="stat"><span>已发布状态</span><b>${published}</b><small>以记录状态统计</small></div><div class="stat"><span>待完善内容</span><b>${drafts}</b><small>草稿与待处理</small></div><div class="stat"><span>已连接账号</span><b>${data.accounts.filter(x=>x.status==='connected').length}</b><small>平台授权状态</small></div></div>` + card('内容表现明细', data.content.map(x=>`<div class="post-record"><div class="post-record-main"><b>${esc(x.title || '未命名内容')}</b><small>${esc(x.platform || '未指定平台')} · ${esc(x.status || '草稿')}</small></div><strong>${x.ai_score ?? '—'}</strong></div>`).join('') || empty('还没有可分析的内容记录。'))
+  } else if (active === 'leaderboard') {
+    view.innerHTML = `<div class="page-intro"><span class="eyebrow dark-eyebrow">RANKING</span><h1>排行榜</h1><p>基于当前已保存的热点评分排序，不冒充平台实时榜单。</p></div>` + card('热点内容排行', data.hot.slice().sort((a,b)=>Number(b.ai_score||0)-Number(a.ai_score||0)).map((x,i)=>`<div class="post-record"><div class="rank-number">${String(i+1).padStart(2,'0')}</div><div class="post-record-main"><b>${esc(x.title || '未命名热点')}</b><small>${esc(x.source || '来源未记录')}</small></div><strong>${x.ai_score ?? '—'}</strong></div>`).join('') || empty('暂无热点评分。可先前往爆款雷达录入样本。'))
+  } else if (active === 'templates') {
+    const templates = [{title:'小红书种草笔记',platform:'小红书',body:'标题：一个让我反复回购的好物\\n开头：先说使用前遇到的问题\\n正文：真实体验、三个亮点、适合人群\\n结尾：邀请读者分享体验'},{title:'抖音口播脚本',platform:'抖音',body:'开头3秒：提出痛点或反差\\n中段：给出三个具体信息点\\n结尾：总结并引导互动'},{title:'知识科普内容',platform:'全平台',body:'提出常见误区\\n用简单例子解释原理\\n给出可执行的三步建议'}]
+    view.innerHTML = `<div class="page-intro"><span class="eyebrow dark-eyebrow">TEMPLATES</span><h1>模板中心</h1><p>选择模板后可复制到 AI 写文案页面继续编辑。</p></div><div class="template-grid">${templates.map((t,i)=>`<article class="template-card"><span class="template-tag">${esc(t.platform)}</span><h3>${esc(t.title)}</h3><p>${esc(t.body).replace(/\\n/g,'<br>')}</p><button data-template="${i}">使用模板 ↗</button></article>`).join('')}</div>`
+    document.querySelectorAll('[data-template]').forEach(b=>b.addEventListener('click',()=>{ active='create'; render(); const body=$('#body'); if(body) body.value=templates[Number(b.dataset.template)].body; const title=$('#ctitle'); if(title) title.value=templates[Number(b.dataset.template)].title }))
+  } else if (active === 'me') {
+    view.innerHTML = `<div class="page-intro"><span class="eyebrow dark-eyebrow">ACCOUNT</span><h1>个人中心</h1><p>管理当前登录身份与平台接入状态。</p></div>` + card('账号信息', `<div class="profile-row"><span>登录邮箱</span><b>${esc(user?.email || '未登录')}</b></div><div class="profile-row"><span>用户 ID</span><code>${esc(user?.id || '—')}</code></div><div class="profile-row"><span>身份验证</span><b>Supabase Auth</b></div><div class="profile-row"><span>已连接平台</span><b>${data.accounts.filter(x=>x.status==='connected').length}</b></div><button id="profileLogout" class="secondary">退出登录</button>`)
+    $('#profileLogout').addEventListener('click',()=>supabase.auth.signOut())
   } else if (active === 'hot') {
     renderRadar(view)
   } else if (active === 'create') {
