@@ -316,7 +316,7 @@ function render() {
   } else if (active === 'remix') {
     renderRemixLab(view)
   } else if (active === 'library') {
-    view.innerHTML = card('内容库', data.content.map((x) => `<div class="row"><div><b>${esc(x.title)}</b><small>${esc(x.platform)} · ${esc(x.status)} · 素材 ${Array.isArray(x.media_urls) && x.media_urls.length ? '已上传' : '无'}</small></div><div class="mini-actions"><strong>${x.ai_score ?? '-'}</strong><button data-queue-publish="${x.id}">加入发布队列</button></div></div>`).join('') || empty('暂无内容'))
+    view.innerHTML = card('内容库', data.content.map((x) => `<div class="row"><div><b>${esc(x.title)}</b><small>${esc(x.platform)} · ${esc(x.status)} · 素材 ${Array.isArray(x.media_urls) && x.media_urls.length ? '已上传' : '无'}</small></div><div class="mini-actions"><strong>${x.ai_score ?? '-'}</strong><button class="secondary" data-library-edit="${esc(x.id)}">编辑</button><button data-queue-publish="${esc(x.id)}">加入发布队列</button></div></div>`).join('') || empty('暂无内容')); document.querySelectorAll('[data-library-edit]').forEach(button=>button.addEventListener('click',()=>openContentEditor(button.dataset.libraryEdit)))
     document.querySelectorAll('[data-queue-publish]').forEach((button) => button.addEventListener('click', () => queuePublish(button.dataset.queuePublish)))
   } else if (active === 'schedule') {
     const scheduled = data.content.filter(x => x.scheduled_at).sort((a,b) => new Date(a.scheduled_at)-new Date(b.scheduled_at))
