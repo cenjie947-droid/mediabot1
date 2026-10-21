@@ -154,3 +154,13 @@ test('cron command works with Render-provided environment variables when no loca
   assert.ok(pkg.scripts.automation.includes('--env-file-if-exists=.env'), 'automation command must not require a local .env file on hosted cron')
   assert.ok(pkg.scripts.automation.includes('worker.mjs'), 'automation command must start the worker')
 })
+
+
+test('repository includes the core v7 schema migration referenced by deployment docs', async () => {
+  const sql = await read('../supabase/migrations/20261022_core_v7_schema.sql')
+  const readme = await read('../README.md')
+  for (const table of ['social_accounts','content_items','hot_topics','publish_jobs','scheduled_tasks','run_logs','ai_generations']) assert.ok(sql.includes('create table if not exists public.' + table), 'missing core table ' + table)
+  assert.ok(sql.includes('private.social_account_secrets'), 'private token storage must be defined')
+  assert.ok(sql.includes("values ('publish-media','publish-media',false"), 'media bucket must be private')
+  assert.ok(readme.includes('20261022_core_v7_schema.sql'), 'setup docs must list the core migration')
+})
