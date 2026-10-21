@@ -140,13 +140,54 @@ function render() {
   const view = $('#view')
 
   if (active === 'dashboard') {
+    const readyContent = data.content.filter(x => ['draft','ready','generated','completed'].includes(String(x.status || '').toLowerCase())).length
+    const pendingTasks = data.tasks.filter(x => x.enabled).length
+    const connectedAccounts = data.accounts.filter(x => x.status === 'connected').length
+    const recentContent = data.content.slice(0, 4)
+    const recentTasks = data.tasks.slice(0, 4)
     view.innerHTML = `
-      <div class="hero"><div><h1>今天，继续做出好内容。</h1><p>热点 → 评分 → 写作 → 排期 → 发布。</p></div><button id="newContentBtn">+ 新建 AI 内容</button></div>
-      <div class="stats">
-        ${[['热点', data.hot.length], ['内容', data.content.length], ['任务', data.tasks.filter((x) => x.enabled).length], ['账号', data.accounts.filter((x) => x.status === 'connected').length]].map((x) => `<div class="stat"><span>${x[0]}</span><b>${x[1]}</b></div>`).join('')}
+      <div class="hero workbench-hero">
+        <div><span class="eyebrow">YOUR CONTENT WORKSPACE</span><h1>把灵感，变成下一条好内容。</h1><p>从发现热点、生成文案到管理发布计划，在一个工作台完成内容生产。</p>
+          <div class="workbench-actions"><button id="newContentBtn">＋ 创建内容</button><button id="goHotBtn" class="hero-secondary">查看热点 ↗</button></div>
+        </div><div class="hero-orbit" aria-hidden="true"><div class="orbit-ring"></div><div class="orbit-core">Mb<span>✳</span></div><i>IDEA → POST</i></div>
       </div>
-      ${card('高分热点', data.hot.slice(0, 5).map((x) => `<div class="row"><div><b>${esc(x.title)}</b><small>${esc(x.source || '')}</small></div><strong>${x.ai_score ?? '-'}</strong></div>`).join('') || empty('暂无热点'))}`
+      <div class="section-heading"><div><span class="eyebrow dark-eyebrow">OVERVIEW</span><h2>运营概览</h2></div><span class="muted">数据来自当前账号已保存的记录</span></div>
+      <div class="stats workbench-stats">
+        <div class="stat"><div class="stat-top"><span>热点素材</span><span class="stat-icon">↗</span></div><b>${data.hot.length}</b><small>已收集热点</small></div>
+        <div class="stat"><div class="stat-top"><span>内容资产</span><span class="stat-icon">▤</span></div><b>${data.content.length}</b><small>已保存内容</small></div>
+        <div class="stat"><div class="stat-top"><span>待执行任务</span><span class="stat-icon">◷</span></div><b>${pendingTasks}</b><small>已启用的自动任务</small></div>
+        <div class="stat"><div class="stat-top"><span>已接入账号</span><span class="stat-icon">◎</span></div><b>${connectedAccounts}</b><small>已连接的平台账号</small></div>
+      </div>
+      <div class="workbench-grid">
+        <div class="card"><div class="panel-heading"><div><span class="eyebrow dark-eyebrow">QUICK START</span><h3>快速开始</h3></div><span class="panel-mark">✳</span></div>
+          <div class="quick-actions">
+            <button class="quick-action" id="quickHot"><span class="quick-icon">↗</span><span><b>发现内容方向</b><small>浏览热点与样本趋势</small></span><span class="quick-arrow">→</span></button>
+            <button class="quick-action" id="quickWrite"><span class="quick-icon">✎</span><span><b>生成 AI 文案</b><small>从主题开始制作内容</small></span><span class="quick-arrow">→</span></button>
+            <button class="quick-action" id="quickEdit"><span class="quick-icon">▶</span><span><b>制作视频</b><small>使用自己的视频素材剪辑</small></span><span class="quick-arrow">→</span></button>
+            <button class="quick-action" id="quickAccounts"><span class="quick-icon">◎</span><span><b>管理发布账号</b><small>查看平台接入状态</small></span><span class="quick-arrow">→</span></button>
+          </div>
+        </div>
+        <div class="card"><div class="panel-heading"><div><span class="eyebrow dark-eyebrow">CONTENT LIBRARY</span><h3>最近的内容</h3></div><button class="text-button" id="viewLibrary">查看全部 ↗</button></div>
+          ${recentContent.map(x => `<div class="content-line"><div class="content-thumb">${esc((x.platform || '文').slice(0,1).toUpperCase())}</div><div class="content-meta"><b>${esc(x.title || '未命名内容')}</b><small>${esc(x.platform || '未指定平台')} · ${esc(x.status || '草稿')}</small></div><span class="content-score">${x.ai_score ?? '—'}</span></div>`).join('') || empty('还没有内容，先创建你的第一条文案。')}
+        </div>
+      </div>
+      <div class="workbench-grid lower-grid">
+        <div class="card"><div class="panel-heading"><div><span class="eyebrow dark-eyebrow">TRENDING</span><h3>热点速览</h3></div><button class="text-button" id="viewHot">进入雷达 ↗</button></div>
+          ${data.hot.slice(0,4).map((x,i) => `<div class="trend-line"><span class="trend-rank">${String(i+1).padStart(2,'0')}</span><div><b>${esc(x.title || '未命名热点')}</b><small>${esc(x.source || '来源未记录')}</small></div><strong>${x.ai_score ?? '—'}</strong></div>`).join('') || empty('当前没有已保存热点。')}
+        </div>
+        <div class="card"><div class="panel-heading"><div><span class="eyebrow dark-eyebrow">AUTOMATION</span><h3>自动任务</h3></div><button class="text-button" id="viewTasks">管理任务 ↗</button></div>
+          ${recentTasks.map(x => `<div class="task-line"><span class="task-dot ${x.enabled ? 'is-on' : ''}"></span><div><b>${esc(x.name || '未命名任务')}</b><small>${esc(x.cron_expression || x.task_type || '未设置运行周期')}</small></div><span class="task-state">${x.enabled ? '运行中' : '已暂停'}</span></div>`).join('') || empty('还没有自动任务。')}
+        </div>
+      </div>`
     $('#newContentBtn').addEventListener('click', goCreate)
+    $('#goHotBtn').addEventListener('click', () => { active='hot'; render() })
+    $('#quickHot').addEventListener('click', () => { active='hot'; render() })
+    $('#quickWrite').addEventListener('click', goCreate)
+    $('#quickEdit').addEventListener('click', () => { active='remix'; render() })
+    $('#quickAccounts').addEventListener('click', () => { active='accounts'; render() })
+    $('#viewLibrary').addEventListener('click', () => { active='library'; render() })
+    $('#viewHot').addEventListener('click', () => { active='hot'; render() })
+    $('#viewTasks').addEventListener('click', () => { active='tasks'; render() })
   } else if (active === 'hot') {
     renderRadar(view)
   } else if (active === 'create') {
