@@ -132,7 +132,10 @@ create policy "Users insert own AI generations" on public.ai_generations for ins
 
 create schema if not exists private;
 revoke all on schema private from public, anon, authenticated;
-create table if not exists private.social_account_secrets (
+-- Token table is in the default exposed schema so the server's existing
+-- PostgREST calls work without exposing the private schema. Client roles have no
+-- table privileges and RLS has no client policies; only service_role can access it.
+create table if not exists public.social_account_secrets (
   social_account_id uuid primary key references public.social_accounts(id) on delete cascade,
   access_token text,
   refresh_token text,
@@ -140,6 +143,10 @@ create table if not exists private.social_account_secrets (
   metadata jsonb not null default '{}'::jsonb,
   updated_at timestamptz not null default now()
 );
+alter table public.social_account_secrets enable row level security;
+revoke all on public.social_account_secrets from public, anon, authenticated;
+grant all on public.social_account_secrets to service_role;
+
 create table if not exists private.oauth_states (
   state text primary key,
   user_id uuid not null references auth.users(id) on delete cascade,
