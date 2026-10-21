@@ -131,3 +131,35 @@ button.secondary,.ghost{background:#edeee7;color:#36382f}
 .task-state{font-size:10px;color:#7c8d3c;background:#f3f6e7;border-radius:999px;padding:5px 8px;white-space:nowrap}
 @media(max-width:1100px){.hero-orbit{right:2%;opacity:.35}.workbench-grid{grid-template-columns:1fr}}
 @media(max-width:700px){.workbench-hero{padding:23px}.hero-orbit{display:none}.section-heading{align-items:flex-start;flex-direction:column}.workbench-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.workbench-stats .stat{padding:15px}.workbench-stats .stat b{font-size:28px}}
+
+
+/* BNSBot-inspired core workflow layout */
+.nav-section{margin:0 0 17px}
+.nav-section-title{padding:8px 12px 5px;color:#70796b;font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase}
+aside nav button{display:flex;align-items:center;min-height:41px;font-size:13px}
+aside nav button.active{background:#d8f36a;color:#1d2415;font-weight:800;box-shadow:0 5px 14px #00000016}
+aside nav button:hover:not(.active){background:#252b20;color:#f6f8ed}
+.app-header{gap:18px}
+.header-title{display:grid;gap:5px}
+.header-title>b{font-size:19px;letter-spacing:-.03em}
+.header-title>span{font-size:11px;color:#8a8e81;display:flex;align-items:center;gap:7px}
+.status-pip{display:inline-block;width:6px;height:6px;border-radius:50%;background:#8eaf2d}
+.header-tools{display:flex;align-items:center;gap:10px}
+.global-search{height:38px;min-width:235px;display:flex;align-items:center;gap:8px;border:1px solid #e6e8dc;background:#fff;border-radius:11px;padding:0 11px;color:#858a7b}
+.global-search>span{font-size:22px;line-height:1}
+.global-search input{width:100%;min-width:0;border:0;outline:0;background:transparent;font:inherit;font-size:12px;color:#292d24}
+.header-create{white-space:nowrap;background:#d8f36a!important;color:#1d2415!important;border:1px solid #c7e64c!important;font-weight:800}
+.workflow-card{display:grid;grid-template-columns:minmax(190px,.75fr) minmax(0,2fr);gap:22px;align-items:center;margin:18px 0 24px;padding:21px 23px;background:#fff;border:1px solid #e9ebdf;border-radius:17px}
+.workflow-intro h3{font-size:17px;margin:7px 0}
+.workflow-intro p{font-size:12px;color:#858a7b;margin:0;line-height:1.6}
+.workflow-steps{display:flex;align-items:stretch;gap:8px;min-width:0}
+.workflow-steps>button{position:relative;display:grid;gap:6px;flex:1;min-width:0;padding:13px 11px;text-align:left;background:#fafbf5;border:1px solid #eceee2;border-radius:12px;color:#282d21}
+.workflow-steps>button:hover{background:#f5f9e7;border-color:#d6e5a4}
+.workflow-number{font-size:10px;font-weight:900;color:#829b2d;letter-spacing:.08em}
+.workflow-steps b{font-size:12px;white-space:nowrap}
+.workflow-steps small{font-size:10px;color:#8c9084;white-space:nowrap}
+.workflow-steps i{position:absolute;right:10px;top:9px;color:#9da48b;font-style:normal}
+.workflow-connector{display:grid;place-items:center;color:#b2b7a4;font-size:15px}
+[hidden]{display:none!important}
+@media(max-width:1100px){.workflow-card{grid-template-columns:1fr}.workflow-steps{flex-wrap:wrap}.workflow-steps>button{min-width:135px}.workflow-connector{display:none}}
+@media(max-width:700px){.app-header{height:auto;min-height:74px;align-items:flex-start;flex-direction:column;padding:17px 0}.header-tools{width:100%;flex-wrap:wrap}.global-search{flex:1;min-width:150px}.header-create{font-size:12px}.workflow-card{padding:16px}.workflow-steps{display:grid;grid-template-columns:1fr 1fr}.workflow-steps>button{min-width:0}.workflow-steps small{white-space:normal}}
