@@ -107,7 +107,7 @@ async function executeTask(task) {
   if (task.task_type==='hot_fetch') result=await hotFetch(task.user_id,config)
   else if (task.task_type==='ai_score') result=await aiScore(task.user_id,config)
   else if (task.task_type==='generate') result=await generate(task.user_id,config)
-  else if (task.task_type==='publish') { const { publishJobs } = await import('./publishers.mjs'); const { data: jobs, error } = await admin.from('publish_jobs').select('*').eq('user_id',task.user_id).eq('status','queued').order('scheduled_at',{ascending:true}).limit(Number(config.limit||5)); if(error) throw new Error(error.message); result=await publishJobs(admin,jobs||[]) }
+  else if (task.task_type==='publish') { const { publishJobs } = await import('./publishers.mjs'); const now=new Date().toISOString(); const { data: jobs, error } = await admin.from('publish_jobs').select('*').eq('user_id',task.user_id).eq('status','queued').or('scheduled_at.is.null,scheduled_at.lte.'+now).order('scheduled_at',{ascending:true}).limit(Number(config.limit||5)); if(error) throw new Error(error.message); result=await publishJobs(admin,jobs||[]) }
   else if (task.task_type==='sync_metrics') result={ skipped:true, reason:'平台数据同步接口尚未接入' }
     else if (task.task_type==='radar_fetch') {
   const { fetchDouyinRadar } = await import('./radar.mjs')
