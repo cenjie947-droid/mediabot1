@@ -147,3 +147,10 @@ test('cron worker processes due publish jobs independently of user automation ru
   assert.ok(worker.includes('runAutomation, runDuePublishJobs'), 'cron worker must invoke the due publisher')
   assert.ok(worker.includes('const publishing = await runDuePublishJobs()'), 'every cron run must check the publish queue')
 })
+
+
+test('cron command works with Render-provided environment variables when no local .env file exists', async () => {
+  const pkg = JSON.parse(await read('../package.json'))
+  assert.ok(pkg.scripts.automation.includes('--env-file-if-exists=.env'), 'automation command must not require a local .env file on hosted cron')
+  assert.ok(pkg.scripts.automation.includes('worker.mjs'), 'automation command must start the worker')
+})
