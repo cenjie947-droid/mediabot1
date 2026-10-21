@@ -127,6 +127,8 @@ create table if not exists public.ai_generations (
 alter table public.ai_generations enable row level security;
 drop policy if exists "Users read own AI generations" on public.ai_generations;
 create policy "Users read own AI generations" on public.ai_generations for select to authenticated using (exists(select 1 from public.content_items c where c.id=ai_generations.content_id and c.user_id=auth.uid()));
+drop policy if exists "Users insert own AI generations" on public.ai_generations;
+create policy "Users insert own AI generations" on public.ai_generations for insert to authenticated with check (exists(select 1 from public.content_items c where c.id=ai_generations.content_id and c.user_id=auth.uid()));
 
 create schema if not exists private;
 revoke all on schema private from public, anon, authenticated;
@@ -163,3 +165,18 @@ grant all on public.oauth_states to service_role;
 insert into storage.buckets (id,name,public,file_size_limit,allowed_mime_types)
 values ('publish-media','publish-media',false,1073741824,array['video/mp4','video/quicktime','video/webm','audio/mpeg','audio/mp4','audio/wav','image/jpeg','image/png','image/webp'])
 on conflict (id) do update set public=false;
+
+-- Allow authenticated users to upload only into their own folder in the private bucket.
+drop policy if exists "Users upload own publish media" on storage.objects;
+create policy "Users upload own publish media" on storage.objects for insert to authenticated
+with check (bucket_id='publish-media' and (storage.foldername(name))[1]=auth.uid()::text);
+drop policy if exists "Users read own publish media" on storage.objects;
+create policy "Users read own publish media" on storage.objects for select to authenticated
+using (bucket_id='publish-media' and (storage.foldername(name))[1]=auth.uid()::text);
+drop policy if exists "Users update own publish media" on storage.objects;
+create policy "Users update own publish media" on storage.objects for update to authenticated
+using (bucket_id='publish-media' and (storage.foldername(name))[1]=auth.uid()::text)
+with check (bucket_id='publish-media' and (storage.foldername(name))[1]=auth.uid()::text);
+drop policy if exists "Users delete own publish media" on storage.objects;
+create policy "Users delete own publish media" on storage.objects for delete to authenticated
+using (bucket_id='publish-media' and (storage.foldername(name))[1]=auth.uid()::text);
