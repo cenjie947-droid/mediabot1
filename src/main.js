@@ -305,7 +305,7 @@ function render() {
     view.innerHTML = card(editingContent ? '编辑已保存内容' : 'AI 自动写文案', `
       <form id="contentForm" class="form">
         <input id="ctitle" placeholder="输入热点 / 主题，例如：AI 电商新玩法" value="${esc(editingContent?.title || '')}" required>
-        <select id="platform"><option value="all">全平台</option><option value="xiaohongshu">小红书</option><option value="douyin">抖音</option></select>
+        <select id="platform"><option value="all" ${editingContent?.platform==='all'?'selected':''}>全平台</option><option value="xiaohongshu" ${editingContent?.platform==='xiaohongshu'?'selected':''}>小红书</option><option value="douyin" ${editingContent?.platform==='douyin'?'selected':''}>抖音</option></select>
         <select id="tone"><option>专业但有网感</option><option>轻松口语化</option><option>观点犀利</option><option>干货教程</option></select>
         <select id="length"><option>中等</option><option>短</option><option>长</option></select>
         <textarea id="body" placeholder="补充你的写作要求（可选）">${esc(editingContent?.body || '')}</textarea>
@@ -690,8 +690,10 @@ function bindForms() {
       })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'AI 生成失败')
-      result.innerHTML = `<div class="ai-preview"><b>生成成功：${esc(payload.result.title || $('#ctitle').value)}</b><div class="score">${payload.result.ai_score ?? '-'} 分</div><p>${esc($('#platform').value === 'douyin' ? payload.result.douyin : payload.result.xiaohongshu)}</p><small>${(payload.result.hashtags || []).map((tag) => `#${esc(tag)}`).join(' ')}</small></div>`
+      result.innerHTML = `<div class="ai-preview"><b>生成并保存成功：${esc(payload.result.title || $('#ctitle').value)}</b><div class="score">${payload.result.ai_score ?? '-'} 分</div><p>${esc($('#platform').value === 'douyin' ? payload.result.douyin : payload.result.xiaohongshu)}</p><small>${(payload.result.hashtags || []).map((tag) => `#${esc(tag)}`).join(' ')}</small><p>内容已保存到内容库，可继续修改后再安排发布。</p><button type="button" id="editGeneratedContent" class="secondary">继续编辑这条内容</button><button type="button" id="openGeneratedLibrary" class="secondary">查看内容库</button></div>`
       await load()
+      $('#editGeneratedContent')?.addEventListener('click',()=>openContentEditor(payload.content.id))
+      $('#openGeneratedLibrary')?.addEventListener('click',()=>{active='library';render()})
     } catch (error) {
       result.innerHTML = `<div class="error">${esc(error.message)}</div>`
     } finally {
