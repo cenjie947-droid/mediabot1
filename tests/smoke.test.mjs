@@ -84,3 +84,13 @@ test('AI generation forwards creator requirements into the model prompt', async 
   assert.ok(server.includes('用户补充要求：${String(requirements || \'\').trim() || \'无\'}'), 'creator requirements must be included in the AI prompt')
   assert.ok(app.includes("requirements: $('#body').value"), 'form requirements must be sent to the API')
 })
+
+
+test('saved content editing is user-scoped and demo mode remains read-only', async () => {
+  const app = await read('../src/main.js')
+  assert.ok(app.includes('function openContentEditor(id)'), 'saved content editor must be available')
+  assert.ok(app.includes(".eq('id',editingContentId).eq('user_id',user.id)"), 'updates must be scoped to the current user')
+  assert.ok(app.includes("if (demoMode) return alert('演示模式为只读状态，不能编辑样例内容。')"), 'demo content must not be editable')
+  assert.ok(app.includes('data-post-edit='), 'post history must expose editing')
+  assert.ok(app.includes('data-library-edit='), 'content library must expose editing')
+})
