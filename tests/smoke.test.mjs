@@ -230,3 +230,12 @@ test('publish queue request reuses an existing queued job and repairs partial co
   assert.ok(server.includes('alreadyQueued:Boolean(existing)'), 'response should indicate an idempotent repeat')
   assert.ok(server.includes('Heal content metadata even when a previous request created the queue row'), 'retry must repair content status after a partial failure')
 })
+
+
+test('post history exposes a working manual refresh control for publish records', async () => {
+  const main = await read('../src/main.js')
+  assert.ok(main.includes('id="postsRefresh"'), 'post history should expose refresh control')
+  assert.ok(main.includes("button.textContent='刷新中…'"), 'refresh should provide a loading state')
+  assert.ok(main.includes("data.jobs=Array.isArray(payload.jobs)?payload.jobs:[]"), 'refresh should replace cached jobs from API response')
+  assert.ok(main.includes('当前是只读演示模式，没有真实发布记录可刷新。'), 'demo refresh must not pretend to load real jobs')
+})
