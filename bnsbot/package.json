@@ -1,0 +1,8 @@
+{
+  "name": "bnsbot-v8",
+  "private": true,
+  "version": "8.0.0",
+  "type": "module",
+  "scripts": { "start": "node server.mjs", "dev": "node --watch server.mjs" },
+  "dependencies": { "@supabase/supabase-js": "2.118.0", "express": "5.1.0" }
+}
