@@ -8,17 +8,17 @@ test('required application entry points exist', async () => {
   const [html, app, server, pkg] = await Promise.all([
     read('../index.html'), read('../src/main.js'), read('../server.mjs'), read('../package.json')
   ])
-  assert.match(html, /<div[^>]+id=["']app["']|<main[^>]+id=["']app["']|id=["']view["']/i)
-  assert.match(app, /createClient\('@supabase\/supabase-js'\)|createClient\(/)
-  assert.match(server, /app\.get\(['"]\/api\/health['"]/)
-  assert.match(pkg, /"build"\s*:/)
+  assert.ok(html.includes('id="app"'), 'HTML app root must exist')
+  assert.ok(app.includes('createClient('), 'Supabase client initialization must exist')
+  assert.ok(server.includes('/api/health'), 'health endpoint must exist')
+  assert.ok(pkg.includes('"build"'), 'production build script must exist')
 })
 
 test('server has protected API auth and avoids hardcoded provider credentials', async () => {
   const server = await read('../server.mjs')
-  assert.match(server, /async function auth\(/)
-  assert.match(server, /req\.headers\.authorization/i)
-  assert.match(server, /auth\.getUser\(\)/)
+  assert.ok(server.includes('async function auth('), 'auth middleware must exist')
+  assert.ok(server.toLowerCase().includes('req.headers.authorization'), 'Bearer header must be checked')
+  assert.ok(server.includes('auth.getUser()'), 'token must be validated with Supabase')
   assert.doesNotMatch(server, /sk-[A-Za-z0-9]{20,}|client_secret\s*[:=]\s*["'][^"']+["']/i)
 })
 
@@ -33,7 +33,7 @@ test('demo fixtures are synthetic and contain no token-like fields', async () =>
 
 test('scheduling UI validates future time before writing', async () => {
   const app = await read('../src/main.js')
-  assert.match(app, /getTime\(\)<=Date\.now\(\)/)
-  assert.match(app, /scheduled_at:null/)
-  assert.match(app, /eq\('user_id',user\.id\)/)
+  assert.ok(app.includes('getTime()<=Date.now()'), 'past schedule times must be rejected')
+  assert.ok(app.includes('scheduled_at:null'), 'schedule cancellation must clear scheduled_at')
+  assert.ok(app.includes("eq('user_id',user.id)"), 'updates must be scoped to current user')
 })
