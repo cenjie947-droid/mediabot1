@@ -23,6 +23,7 @@ const pages = [
 ]
 
 let user = null
+let demoMode = false
 let active = 'dashboard'
 let data = { hot: [], content: [], tasks: [], logs: [], accounts: [], radar: [], radarPrefs: { watched_categories: ['伤感','情感'], production_mode: 'market' } }
 let radarCategory = '全部赛道'
@@ -64,6 +65,7 @@ $('#app').innerHTML = `
         <input id="password" type="password" placeholder="密码（至少 6 位）" autocomplete="current-password" minlength="6" required>
         <button id="loginBtn" type="submit">登录</button>
         <button type="button" id="signup" class="secondary">注册账号</button>
+        <button type="button" id="demoLogin" class="secondary">进入演示模式（无需 API 密钥）</button>
         <div id="authMsg" role="status"></div>
       </form>
     </div>
@@ -144,7 +146,42 @@ async function apiFetch(url, options = {}) {
   return fetch(url, { ...options, headers })
 }
 
+async function loadDemo() {
+  const fixture = {
+    hot: [
+      { id:'demo-topic-001', title:'一周效率提升小技巧', source:'演示数据', ai_score:92, category:'知识', platform:'douyin', description:'从简单可执行的习惯切入' },
+      { id:'demo-topic-002', title:'平价好物真实体验', source:'演示数据', ai_score:87, category:'生活', platform:'xiaohongshu', description:'用真实使用场景呈现体验' },
+      { id:'demo-topic-003', title:'新手常见误区盘点', source:'演示数据', ai_score:81, category:'教程', platform:'douyin', description:'用常见错误引出解决方法' }
+    ],
+    content: [
+      { id:'demo-content-001', title:'三步整理桌面，让工作更专注', platform:'xiaohongshu', status:'draft', body:'从桌面分区、减少视觉干扰和固定收纳位置三个角度分享。', created_at:new Date().toISOString() },
+      { id:'demo-content-002', title:'新手提升效率的三个习惯', platform:'douyin', status:'scheduled_demo', body:'开头提出痛点，中段展示三个可执行习惯，结尾邀请讨论。', scheduled_at:'2030-01-02T10:00:00.000Z', created_at:new Date().toISOString() },
+      { id:'demo-content-003', title:'一件日常好物的使用记录', platform:'xiaohongshu', status:'published_demo', body:'以个人体验为主，明确使用场景和适用边界。', created_at:new Date().toISOString() }
+    ],
+    tasks: [], logs: [{id:'demo-log-1',created_at:new Date().toISOString(),level:'info',message:'演示模式已启动；所有数据均为虚构样例。'}],
+    accounts: [
+      {id:'demo-account-douyin',platform:'douyin',account_name:'演示抖音账号',status:'demo_connected',followers:12800},
+      {id:'demo-account-xhs',platform:'xiaohongshu',account_name:'演示小红书账号',status:'demo_connected',followers:8600}
+    ],
+    radar: [], radarPrefs: { watched_categories:['伤感','情感'], production_mode:'market' }
+  }
+  data = fixture
+  $('#auth').classList.add('hidden')
+  $('#logout').classList.add('hidden')
+  $('#userbox').innerHTML = '<b>演示创作者</b><small>只读演示 · 不连接真实平台</small>'
+  const banner = document.getElementById('demoBanner')
+  if (!banner) {
+    const notice = document.createElement('div')
+    notice.id = 'demoBanner'
+    notice.className = 'notice'
+    notice.textContent = '演示模式：当前为虚构样例数据。保存、上传、AI 调用、账号授权和真实发布均不会执行。'
+    $('#view').before(notice)
+  }
+  render()
+}
+
 async function load() {
+  if (demoMode) return loadDemo()
   if (!user) return
   const results = await Promise.all([
     supabase.from('hot_topics').select('*').order('ai_score', { ascending: false }).limit(20),
@@ -791,7 +828,8 @@ $('#authForm').addEventListener('submit', async (event) => {
   await login()
 })
 $('#signup').addEventListener('click', signup)
-$('#logout').addEventListener('click', () => supabase.auth.signOut())
+$('#demoLogin').addEventListener('click', () => { demoMode = true; user = { id: 'demo-user-0001', email: 'creator@example.test' }; active = 'dashboard'; loadDemo() })
+$('#logout').addEventListener('click', () => { if (demoMode) { demoMode = false; user = null; $('#demoBanner')?.remove(); $('#auth').classList.remove('hidden'); $('#userbox').innerHTML = ''; render(); return } supabase.auth.signOut() })
 
 supabase.auth.onAuthStateChange((_event, session) => {
   user = session?.user || null
