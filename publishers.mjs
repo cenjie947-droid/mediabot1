@@ -63,7 +63,10 @@ export async function publishJobs(admin,jobs){
     }catch(e){
       failed++
       const message=String(e?.message||e)
-      await admin.from('publish_jobs').update({status:'failed',error_message:message,updated_at:new Date().toISOString()}).eq('id',job.id).eq('status','publishing')
+      // If the platform already confirmed publication but our database update failed,
+      // do not label it retryable: a retry could create a duplicate post.
+      const terminalStatus = message.includes('平台已返回成功') ? 'needs_review' : 'failed'
+      await admin.from('publish_jobs').update({status:terminalStatus,error_message:message,updated_at:new Date().toISOString()}).eq('id',job.id).eq('status','publishing')
       await admin.from('run_logs').insert({user_id:job.user_id,task_type:'publish',level:'error',message:`发布失败：${message}`,metadata:{job_id:job.id,platform:job.platform}})
       results.push({job:job.id,ok:false,error:message})
     }
