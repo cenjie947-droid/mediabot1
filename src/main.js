@@ -343,7 +343,7 @@ function renderAIStudio(view) {
     if($('#body')) $('#body').value=[type,notes].filter(Boolean).join('。')
     const result=$('#aiResult')
     if(result) result.textContent='主题和创作要求已带入 AI 写文案页面。点击“AI 真正生成”开始生成。'
-  }))
+  })
 }
 
 async function renderMaterials(view) {
