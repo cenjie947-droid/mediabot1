@@ -724,15 +724,18 @@ async function queuePublish(contentId){
 }
 
 async function addAccount(platform) {
+  // A database row is not proof of platform authorization. Never mark an account
+  // connected unless the official OAuth callback has completed and tokens are stored.
   try {
     const { error } = await supabase.from('social_accounts').insert({
       user_id: user.id,
       platform,
-      account_name: platform === 'douyin' ? '示例抖音账号' : '示例小红书账号',
-      status: 'connected'
+      account_name: platform === 'douyin' ? '待授权抖音账号' : '待授权小红书账号',
+      status: 'pending'
     })
     if (error) throw error
     await load()
+    alert('已创建待授权记录。此操作不会连接平台或启用发布；请使用官方授权流程。')
   } catch (error) {
     alert(error.message)
   }
