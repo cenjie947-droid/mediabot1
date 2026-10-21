@@ -67,3 +67,11 @@ test('application can boot without Supabase credentials for demo-only testing', 
   assert.ok(app.includes('if (!hasSupabaseConfig) return null'), 'session lookup must skip unconfigured Supabase')
   assert.ok(app.includes('真实登录需要填写 Supabase 配置'), 'real login must explain missing setup')
 })
+
+test('demo mode blocks schedule mutations and labels sample accounts honestly', async () => {
+  const app = await read('../src/main.js')
+  assert.ok(app.includes("if (demoMode) { $('#scheduleMsg').textContent='演示模式为只读状态，排期不会保存。'; return }"), 'schedule save must be blocked in demo mode')
+  assert.ok(app.includes("if (demoMode) return alert('演示模式为只读状态，排期不会更改。')"), 'schedule cancellation must be blocked in demo mode')
+  assert.ok(app.includes('（未授权）'), 'sample social accounts must not look like real platform authorizations')
+  assert.ok(app.includes("if (demoMode) { demoMode=false; user=null;"), 'demo logout must exit demo mode without signing out a fake user')
+})
