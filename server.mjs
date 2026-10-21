@@ -364,6 +364,17 @@ app.post('/api/publish/queue', auth, async (req,res) => {
   res.json({job})
 })
 
+app.get('/api/publish/jobs', auth, async (req,res) => {
+  try {
+    const db=userClient(req.userToken)
+    const limit=Math.max(1,Math.min(100,Number(req.query.limit)||30))
+    const {data,error}=await db.from('publish_jobs').select('id,content_id,social_account_id,platform,status,scheduled_at,started_at,published_at,external_id,error_message,created_at,updated_at').eq('user_id',req.user.id).order('created_at',{ascending:false}).limit(limit)
+    if(error) return res.status(500).json({error:error.message})
+    res.set('Cache-Control','no-store')
+    res.json({jobs:data||[],count:(data||[]).length})
+  } catch(e) { res.status(500).json({error:e.message}) }
+})
+
 app.post('/api/publish/run-now', auth, async (req,res) => {
   if(!SUPABASE_SECRET_KEY) return res.status(503).json({error:'服务器未配置 Secret Key'})
   const admin=createClient(SUPABASE_URL,SUPABASE_SECRET_KEY)
