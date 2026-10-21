@@ -3,12 +3,14 @@ import './style.css'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+const hasSupabaseConfig = Boolean(SUPABASE_URL && SUPABASE_KEY)
 
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.warn('MediaBot: missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY')
+if (!hasSupabaseConfig) {
+  console.warn('MediaBot: Supabase is not configured; sign-in is disabled and only read-only demo mode is available.')
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+// Keep the UI bootable without credentials. These placeholders are never valid auth credentials.
+const supabase = createClient(SUPABASE_URL || 'http://127.0.0.1:54321', SUPABASE_KEY || 'demo-anon-key-not-valid', {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
@@ -124,6 +126,7 @@ function setAuthMessage(message, kind = '') {
 }
 
 async function currentSession() {
+  if (!hasSupabaseConfig) return null
   const { data: result, error } = await supabase.auth.getSession()
   if (error) throw error
   if (result.session) return result.session
@@ -806,6 +809,7 @@ function generateFromTopHot() {
 }
 
 async function login() {
+  if (!hasSupabaseConfig) return setAuthMessage('尚未配置 Supabase。可先进入演示模式；真实登录需要填写 Supabase 配置。', 'error')
   const email = $('#email').value.trim()
   const password = $('#password').value
   setAuthMessage('登录中…')
@@ -814,6 +818,7 @@ async function login() {
 }
 
 async function signup() {
+  if (!hasSupabaseConfig) return setAuthMessage('尚未配置 Supabase。可先进入演示模式；真实注册需要填写 Supabase 配置。', 'error')
   const email = $('#email').value.trim()
   const password = $('#password').value
   if (password.length < 6) return setAuthMessage('密码至少需要 6 位。', 'error')
