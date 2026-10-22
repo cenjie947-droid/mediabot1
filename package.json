@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "start": "node --import ./video-server-routes.mjs --import ./redfox-video-routes.mjs --import ./redfox-performance-routes.mjs server.mjs",
+    "start": "node --import ./video-server-routes.mjs --import ./redfox-video-routes.mjs --import ./redfox-performance-routes.mjs --import ./video-strategy-routes.mjs server.mjs",
     "worker": "node worker.mjs"
   },
   "dependencies": {
