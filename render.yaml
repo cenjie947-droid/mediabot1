@@ -157,3 +157,27 @@ services:
         value: veryfast
       - key: VIDEO_CRF
         value: "22"
+
+  - type: cron
+    name: creator-os-video-publish
+    runtime: node
+    schedule: "*/5 * * * *"
+    buildCommand: npm install
+    startCommand: npm run video:publish
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: VIDEO_PUBLISH_BRIDGE_URL
+        sync: false
+      - key: VIDEO_PUBLISH_CUSTOM_URL
+        sync: false
+      - key: VIDEO_PUBLISH_SHARED_SECRET
+        sync: false
+      - key: VIDEO_PUBLISH_BATCH
+        value: "5"
+      - key: VIDEO_PUBLISH_MAX_ATTEMPTS
+        value: "3"
+      - key: VIDEO_PUBLISH_TIMEOUT_MS
+        value: "30000"
