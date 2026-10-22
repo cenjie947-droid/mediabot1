@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: mediabot-web
+    name: creator-os
     runtime: node
     buildCommand: npm install && npm run build
     startCommand: npm start
@@ -16,7 +16,7 @@ services:
         sync: false
       - key: SUPABASE_SECRET_KEY
         sync: false
-      - key: PUBLIC_APP_URL
+      - key: ACCOUNT_ENCRYPTION_KEY
         sync: false
       - key: AI_BASE_URL
         sync: false
@@ -24,36 +24,35 @@ services:
         sync: false
       - key: AI_MODEL
         sync: false
-      - key: HOT_FEEDS
+      - key: PUBLIC_APP_URL
         sync: false
-      - key: DOUYIN_CLIENT_KEY
+      - key: TOUTIAO_BRIDGE_URL
         sync: false
-      - key: DOUYIN_CLIENT_SECRET
+      - key: REDFOX_API_KEY
         sync: false
-      - key: DOUYIN_REDIRECT_URI
+      - key: REDFOX_BASE_URL
         sync: false
-      - key: XHS_CLIENT_ID
+      - key: REDFOX_DOUYIN_SOURCE
         sync: false
-      - key: XHS_CLIENT_SECRET
+      - key: REDFOX_TREND_ENDPOINTS_JSON
         sync: false
-      - key: XHS_REDIRECT_URI
-        sync: false
-
   - type: cron
-    name: mediabot-automation
-    schedule: "*/15 * * * *"
+    name: creator-os-publisher
+    schedule: "*/5 * * * *"
     buildCommand: npm install
-    startCommand: npm run automation
+    startCommand: npm run worker
     envVars:
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SECRET_KEY
         sync: false
-      - key: AI_BASE_URL
+      - key: ACCOUNT_ENCRYPTION_KEY
         sync: false
-      - key: AI_API_KEY
+      - key: REDFOX_API_KEY
         sync: false
-      - key: AI_MODEL
+      - key: REDFOX_BASE_URL
         sync: false
-      - key: HOT_FEEDS
+      - key: REDFOX_DOUYIN_SOURCE
+        sync: false
+      - key: REDFOX_TREND_ENDPOINTS_JSON
         sync: false

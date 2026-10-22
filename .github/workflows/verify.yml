@@ -1,7 +1,7 @@
-name: Verify MediaBot
+name: Verify Creator OS
 on:
   push:
-    branches: [main, feature/viral-market-radar]
+    branches: [main, feat/bnsbot-style-wechat-toutiao]
   pull_request:
     branches: [main]
 jobs:
@@ -14,6 +14,6 @@ jobs:
           node-version: 22
       - run: npm install --no-audit --no-fund
       - run: node --check server.mjs
-      - run: node --check video-remix.mjs
+      - run: node --check worker.mjs
       - run: node --check src/main.js
       - run: npm run build
