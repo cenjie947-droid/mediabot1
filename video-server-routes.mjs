@@ -19,6 +19,7 @@ async function auth(req,res,next){
   req.videoDb=client;req.videoUser=data.user;next()
 }
 function db(req){return req.videoDb}
+function pickAudioUrl(data){return data?.audio_url||data?.audioUrl||data?.output_url||data?.url||data?.data?.audio_url||data?.data?.audioUrl||data?.data?.output_url||data?.data?.url||null}
 function install(app){
   if(installed)return
   installed=true
@@ -45,7 +46,13 @@ function install(app){
     const p=await db(req).from('video_projects').select('id').eq('id',req.params.id).eq('user_id',req.videoUser.id).single();if(p.error)return bad(res,404,'视频项目不存在')
     const b=req.body||{},text=String(b.text||'').trim();if(!text)return bad(res,400,'TTS 文本不能为空')
     const r=await fetch(`${TTS_BASE}${TTS_PATH}`,{method:'POST',headers:{'Content-Type':'application/json',...(TTS_KEY?{Authorization:`Bearer ${TTS_KEY}`}:{})},body:JSON.stringify({text,voice:b.voice||process.env.TTS_VOICE||'zh-CN',speed:Number(b.speed||1),format:b.format||'mp3'}),signal:AbortSignal.timeout(60000)})
-    const data=await r.json().catch(()=>({}));if(!r.ok)return bad(res,502,data.error||`TTS 服务 HTTP ${r.status}`);res.json({data})
+    const data=await r.json().catch(()=>({}));if(!r.ok)return bad(res,502,data.error||`TTS 服务 HTTP ${r.status}`)
+    const audioUrl=pickAudioUrl(data)
+    if(b.scene_id&&audioUrl){
+      const s=await db(req).from('video_scenes').update({tts_audio_url:audioUrl,status:'vo_ready',updated_at:new Date().toISOString()}).eq('id',b.scene_id).eq('project_id',req.params.id).select().single()
+      if(s.error)return bad(res,500,s.error.message)
+    }
+    res.json({data,audio_url:audioUrl,scene_id:b.scene_id||null})
   })
   app.post('/api/video/projects/:id/render',auth,async(req,res)=>{
     const p=await db(req).from('video_projects').select('*').eq('id',req.params.id).eq('user_id',req.videoUser.id).single();if(p.error)return bad(res,404,'视频项目不存在')
