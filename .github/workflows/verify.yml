@@ -1,9 +1,9 @@
 name: Verify Creator OS
 on:
   push:
-    branches: [main, feat/bnsbot-style-wechat-toutiao]
+    branches: [main, feat/bnsbot-style-wechat-toutiao, feat/multi-platform-trend-radar]
   pull_request:
-    branches: [main]
+    branches: [main, feat/bnsbot-style-wechat-toutiao]
 jobs:
   verify:
     runs-on: ubuntu-latest
@@ -15,5 +15,7 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: node --check server.mjs
       - run: node --check worker.mjs
+      - run: node --check trend-radar.mjs
       - run: node --check src/main.js
+      - run: node --check src/trend-radar.js
       - run: npm run build
