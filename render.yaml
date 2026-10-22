@@ -36,6 +36,14 @@ services:
         sync: false
       - key: REDFOX_TREND_ENDPOINTS_JSON
         sync: false
+      - key: TTS_BASE_URL
+        sync: false
+      - key: TTS_API_KEY
+        sync: false
+      - key: TTS_PATH
+        sync: false
+      - key: TTS_VOICE
+        sync: false
   - type: cron
     name: creator-os-publisher
     schedule: "*/5 * * * *"
@@ -56,3 +64,23 @@ services:
         sync: false
       - key: REDFOX_TREND_ENDPOINTS_JSON
         sync: false
+  - type: cron
+    name: creator-os-video-renderer
+    runtime: docker
+    schedule: "*/5 * * * *"
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    dockerCommand: node video-worker.mjs
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: VIDEO_STORAGE_BUCKET
+        value: video-renders
+      - key: VIDEO_RENDER_BATCH
+        value: "2"
+      - key: VIDEO_PRESET
+        value: veryfast
+      - key: VIDEO_CRF
+        value: "22"
