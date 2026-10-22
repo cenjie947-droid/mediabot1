@@ -39,16 +39,12 @@ async function renderScene(scene,dir,index){
     const isVideo=assetKind==='video'||/\.(mp4|mov|m4v|webm|mkv)(\?|$)/i.test(asset)
     if(isVideo) args.push('-stream_loop','-1','-i',media)
     else args.push('-loop','1','-i',media)
-  }else{
-    args.push('-f','lavfi','-i',`color=c=#111827:s=${WIDTH}x${HEIGHT}:r=30`)
-  }
+  }else args.push('-f','lavfi','-i',`color=c=#111827:s=${WIDTH}x${HEIGHT}:r=30`)
   const audio=scene.tts_audio_url||scene.ttsAudioUrl
   let audioFile=null
   if(audio){audioFile=path.join(dir,`audio-${index}.${extFromUrl(audio,'mp3')}`);await download(audio,audioFile);args.push('-i',audioFile)}
-  args.push('-t',String(d),'-vf',filter,'-r','30','-c:v','libx264','-preset',process.env.VIDEO_PRESET||'veryfast','-crf',String(process.env.VIDEO_CRF||22),'-pix_fmt','yuv420p')
-  if(audioFile) args.push('-map','0:v:0','-map','1:a:0','-c:a','aac','-b:a','128k','-shortest')
-  else args.push('-an')
-  args.push('-movflags','+faststart',out)
+  else args.push('-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=48000')
+  args.push('-t',String(d),'-vf',filter,'-r','30','-c:v','libx264','-preset',process.env.VIDEO_PRESET||'veryfast','-crf',String(process.env.VIDEO_CRF||22),'-pix_fmt','yuv420p','-map','0:v:0','-map','1:a:0','-c:a','aac','-b:a','128k','-shortest','-movflags','+faststart',out)
   await run(args)
   return out
 }
