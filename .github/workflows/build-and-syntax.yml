@@ -1,0 +1,28 @@
+name: Build and syntax check
+
+on:
+  pull_request:
+    branches: [main, feat/multi-platform-trend-radar]
+  push:
+    branches: [feat/auto-content-ops-x]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - run: npm run build
+      - name: Check server-side JavaScript syntax
+        run: |
+          node --check server.mjs
+          node --check video-automation-worker.mjs
+          node --check video-automation-recovery.mjs
+          node --check video-worker.mjs
+          node --check video-publish-worker.mjs
+          node --check video-publish-adapter.mjs
+          node --check video-publish-routes.mjs
