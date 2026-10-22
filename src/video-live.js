@@ -45,7 +45,7 @@ function performanceMarkup(rows=[]){
   const prev=rows[1]||{};
   const delta=(a,b)=>b?Math.round((Number(a||0)-Number(b||0))/Number(b)*100):null;
   const cards=[['播放',latest.views],['点赞',latest.likes],['评论',latest.comments],['分享',latest.shares],['收藏',latest.favorites]];
-  return `<div class="video-perf-inner"><div class="perf-cards">${cards.map(([n,v])=>`<div class="perf-card"><small>${n}</small><b>${fmtNum(v)}</b>${prev.recorded_at&&delta(v,prev[n==='播放'?'views':n==='点赞'?'likes':n==='评论'?'comments':n==='分享'?'shares':'favorites'])!=null?`<span>${delta(v,prev[n==='播放'?'views':n==='点赞'?'likes':n==='评论'?'comments':n==='分享'?'shares':'favorites'])>=0?'↑':'↓'} ${Math.abs(delta(v,prev[n==='播放'?'views':n==='点赞'?'likes':n==='评论'?'comments':n==='分享'?'shares':'favorites']))}% vs 上次</span>`:''}</div>`).join('')}</div><div class="perf-meta">${latest.external_work_id?`作品 ID：${esc(latest.external_work_id)}`:'尚未绑定抖音作品'} · 最近同步：${latest.recorded_at?new Date(latest.recorded_at).toLocaleString('zh-CN'):'—'}</div><div class="perf-actions"><button class="secondary small" id="syncPerformance">↻ 同步抖音数据</button><button class="secondary small" id="analyzePerformance">✦ AI 复盘</button></div><div id="perfAnalysis"></div></div>`
+  return `<div class="video-perf-inner"><div class="perf-cards">${cards.map(([n,v])=>{const key={播放:'views',点赞:'likes',评论:'comments',分享:'shares',收藏:'favorites'}[n],d=delta(v,prev[key]);return `<div class="perf-card"><small>${n}</small><b>${fmtNum(v)}</b>${prev.recorded_at&&d!=null?`<span>${d>=0?'↑':'↓'} ${Math.abs(d)}% vs 上次</span>`:''}</div>`}).join('')}</div><div class="perf-meta">${latest.external_work_id?`作品 ID：${esc(latest.external_work_id)}`:'尚未绑定抖音作品'} · 最近同步：${latest.recorded_at?new Date(latest.recorded_at).toLocaleString('zh-CN'):'—'}</div><div class="perf-actions"><button class="secondary small" id="syncPerformance">↻ 同步抖音数据</button><button class="secondary small" id="analyzePerformance">✦ AI 复盘</button></div><div id="perfAnalysis"></div></div>`
 }
 
 async function loadPerformance(){
@@ -62,14 +62,29 @@ function ensurePerformancePanel(){
   loadPerformance()
 }
 
+function parseAi(v){
+  if(v&&typeof v==='object'&&!Array.isArray(v))return v
+  let s=String(v||'').trim().replace(/^```(?:json)?/i,'').replace(/```$/,'').trim()
+  try{return JSON.parse(s)}catch{return {summary:s}}
+}
+
+async function bindReview(review){
+  return authFetch(`/api/video/projects/${projectId()}/strategy/review`,{method:'POST',body:JSON.stringify(review)})
+}
+
 function bindPerformance(){
   document.querySelector('#syncPerformance')?.addEventListener('click',async()=>{
     const b=document.querySelector('#syncPerformance');if(b){b.disabled=true;b.textContent='同步中…'}
-    try{const r=await authFetch(`/api/video/projects/${projectId()}/performance/sync`,{method:'POST',body:JSON.stringify({})});await loadPerformance();alert(r?.work?'已同步最新作品数据':'同步完成')}catch(e){alert(e.message)}finally{if(b){b.disabled=false;b.textContent='↻ 同步抖音数据'}}
+    try{const r=await authFetch(`/api/video/projects/${projectId()}/performance/sync`,{method:'POST',body:JSON.stringify({})});await loadPerformance();alert(r?.feedback_applied?'已同步，并更新了账号策略。':'同步完成')}catch(e){alert(e.message)}finally{if(b){b.disabled=false;b.textContent='↻ 同步抖音数据'}}
   })
   document.querySelector('#analyzePerformance')?.addEventListener('click',async()=>{
-    const out=document.querySelector('#perfAnalysis');if(!out)return;out.innerHTML='<small>AI 正在复盘这条视频…</small>'
-    try{const r=await authFetch(`/api/video/projects/${projectId()}/performance`);const rows=r?.data||[];if(!rows.length){out.innerHTML='<small>还没有表现数据，先同步一次。</small>';return}const x=rows[0];const prompt=`你是短视频运营分析师。请根据这条抖音视频的真实表现数据做复盘，只输出JSON：summary, strengths, weaknesses, next_experiment。数据：views=${x.views}, likes=${x.likes}, comments=${x.comments}, shares=${x.shares}, favorites=${x.favorites}, followers=${x.follower_count}, popularity=${x.popularity_score}`;const a=await authFetch('/api/ai/generate',{method:'POST',body:JSON.stringify({mode:'video',topic:prompt})});out.innerHTML=`<div class="perf-ai"><b>${esc(a.summary||'复盘完成')}</b><p>${esc(a.next_experiment||'')}</p>${Array.isArray(a.strengths)?`<ul>${a.strengths.map(v=>`<li>${esc(v)}</li>`).join('')}</ul>`:''}</div>`}catch(e){out.innerHTML=`<small>AI 复盘失败：${esc(e.message)}</small>`}
+    const out=document.querySelector('#perfAnalysis');if(!out)return;out.innerHTML='<small>AI 正在复盘这条视频，并写入下一次实验策略…</small>'
+    try{
+      const r=await authFetch(`/api/video/projects/${projectId()}/performance`);const rows=r?.data||[];if(!rows.length){out.innerHTML='<small>还没有表现数据，先同步一次。</small>';return}
+      const x=rows[0];const prompt=`你是短视频运营分析师。请根据这条抖音视频的真实表现数据做复盘，只输出JSON：summary, strengths, weaknesses, next_experiment。summary要说明最重要结论；strengths和weaknesses为数组；next_experiment必须是下一条视频只改变1-2个变量的具体实验。数据：views=${x.views}, likes=${x.likes}, comments=${x.comments}, shares=${x.shares}, favorites=${x.favorites}, followers=${x.follower_count}, popularity=${x.popularity_score}`
+      const a=await authFetch('/api/ai/generate',{method:'POST',body:JSON.stringify({mode:'video',topic:prompt})});const review=parseAi(a);await bindReview(review)
+      out.innerHTML=`<div class="perf-ai"><b>${esc(review.summary||'复盘完成')}</b><p>${esc(review.next_experiment||'')}</p>${Array.isArray(review.strengths)?`<ul>${review.strengths.map(v=>`<li>${esc(v)}</li>`).join('')}</ul>`:''}<small>✓ 已写入账号策略，下一次 Director 会参考。</small></div>`
+    }catch(e){out.innerHTML=`<small>AI 复盘失败：${esc(e.message)}</small>`}
   })
 }
 
