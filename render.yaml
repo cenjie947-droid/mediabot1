@@ -44,6 +44,8 @@ services:
         sync: false
       - key: TTS_VOICE
         sync: false
+      - key: VIDEO_RENDERER
+        value: local
   - type: cron
     name: creator-os-publisher
     schedule: "*/5 * * * *"
