@@ -40,15 +40,19 @@ async function tts(text){
   return j.audio_url||j.audioUrl||j.output_url||j.url||j.data?.audio_url||j.data?.audioUrl||j.data?.output_url||j.data?.url||null
 }
 async function claim(p){
-  const q=await db.from('video_projects').update({status:'directing',updated_at:now(),director_notes:{...(p.director_notes||{}),automation:{...(p.director_notes?.automation||{}),started_at:now(),worker:'video-automation-worker'}}}).eq('id',p.id).eq('status','queued').select('*').single()
+  const automation={...(p.director_notes?.automation||{}),started_at:now(),worker:'video-automation-worker'}
+  const q=await db.from('video_projects').update({status:'directing',updated_at:now(),director_notes:{...(p.director_notes||{}),automation}}).eq('id',p.id).eq('status','queued').select('*').single()
   return q.data||null
 }
 async function attachAssets(projectId,scenes){
   let ready=0,failed=0
   for(const s of scenes){
+    if(s.asset_url){ready++;continue}
     const query=String(s.asset_hint||s.visual||'').trim().slice(0,180)
     if(!query)continue
     try{
+      const existing=await db.from('video_assets').select('id,source_url').eq('project_id',projectId).eq('scene_id',s.id).limit(1).maybeSingle()
+      if(existing.data?.source_url){await db.from('video_scenes').update({asset_url:existing.data.source_url,status:'asset_ready',updated_at:now()}).eq('id',s.id);ready++;continue}
       const candidates=await searchRedFoxAssets({query,limit:3})
       const asset=candidates.find(x=>x.source_url)
       if(!asset){failed++;continue}
@@ -61,40 +65,56 @@ async function attachAssets(projectId,scenes){
   }
   return {ready,failed}
 }
+async function ensureRender(project,scenes,settings){
+  const existing=await db.from('video_renders').select('*').eq('project_id',project.id).in('status',['queued','rendering']).order('created_at',{ascending:false}).limit(1).maybeSingle()
+  if(existing.error)throw new Error(existing.error.message)
+  if(existing.data)return existing.data
+  const render=await createRenderJob(project,{scenes,settings})
+  const row=await db.from('video_renders').insert({project_id:project.id,provider:render.provider||'local',status:render.status||'queued',output_url:render.output_url||render.url||null,error:render.error||null,settings:{automation:true,...settings}}).select().single()
+  if(row.error)throw new Error(row.error.message)
+  return row.data
+}
 async function processProject(p){
   const meta=p.script&&typeof p.script==='object'?p.script:{}
-  const directed=await ai(p.title?.replace(/\s*·\s*自动选题$/,'')||'热门话题',meta)
-  const scenes=(directed.scenes||[]).slice(0,10).map((s,i)=>({project_id:p.id,scene_no:i+1,duration:Math.max(1,Math.min(20,Number(s.duration||5))),visual:String(s.visual||'竖屏动态画面').slice(0,2000),voiceover:String(s.voiceover||'').slice(0,4000),onscreen_text:String(s.text||s.onscreen_text||'').slice(0,500),asset_hint:String(s.asset_hint||'').slice(0,500),status:'scripted'}))
-  if(!scenes.length)throw new Error('没有生成镜头')
-  await db.from('video_scenes').delete().eq('project_id',p.id)
-  const ins=await db.from('video_scenes').insert(scenes).select('*')
-  if(ins.error)throw new Error(ins.error.message)
-  const nextProject={title:String(directed.title||p.title).slice(0,200),hook:String(directed.hook||'').slice(0,1000),duration:Number(directed.duration||45),cta:String(directed.cta||p.cta||'').slice(0,500),verdict:String(directed.verdict||'').slice(0,2000),structure:String(directed.structure||'').slice(0,2000),script:{...(meta||{}),director_generated:true,generated_at:now(),scenes_count:scenes.length}}
-  const up=await db.from('video_projects').update({...nextProject,status:'scripted',updated_at:now()}).eq('id',p.id)
-  if(up.error)throw new Error(up.error.message)
-
-  const assets=await attachAssets(p.id,ins.data||[])
+  const existingScenes=(await db.from('video_scenes').select('*').eq('project_id',p.id).order('scene_no')).data||[]
+  let directed=null
+  let scenes=existingScenes
+  if(existingScenes.length&&['scripted','asset_ready','rendering'].includes(p.status)){directed={title:p.title,hook:p.hook,duration:p.duration,cta:p.cta,verdict:p.verdict,structure:p.structure};log('resume existing scenes',p.id)}
+  else{
+    directed=await ai(p.title?.replace(/\s*·\s*自动选题$/,'')||'热门话题',meta)
+    scenes=(directed.scenes||[]).slice(0,10).map((s,i)=>({project_id:p.id,scene_no:i+1,duration:Math.max(1,Math.min(20,Number(s.duration||5))),visual:String(s.visual||'竖屏动态画面').slice(0,2000),voiceover:String(s.voiceover||'').slice(0,4000),onscreen_text:String(s.text||s.onscreen_text||'').slice(0,500),asset_hint:String(s.asset_hint||'').slice(0,500),status:'scripted'}))
+    if(!scenes.length)throw new Error('没有生成镜头')
+    await db.from('video_scenes').delete().eq('project_id',p.id)
+    const ins=await db.from('video_scenes').insert(scenes).select('*')
+    if(ins.error)throw new Error(ins.error.message)
+    scenes=ins.data||[]
+    const nextProject={title:String(directed.title||p.title).slice(0,200),hook:String(directed.hook||'').slice(0,1000),duration:Number(directed.duration||45),cta:String(directed.cta||p.cta||'').slice(0,500),verdict:String(directed.verdict||'').slice(0,2000),structure:String(directed.structure||'').slice(0,2000),script:{...(meta||{}),director_generated:true,generated_at:now(),scenes_count:scenes.length}}
+    const up=await db.from('video_projects').update({...nextProject,status:'scripted',updated_at:now()}).eq('id',p.id)
+    if(up.error)throw new Error(up.error.message)
+    p={...p,...nextProject}
+  }
+  const assets=await attachAssets(p.id,scenes)
   let ttsReady=0,ttsFailed=0
-  for(const s of ins.data||[]){
-    if(!s.voiceover)continue
+  const refreshed=(await db.from('video_scenes').select('*').eq('project_id',p.id).order('scene_no')).data||[]
+  for(const s of refreshed){
+    if(s.tts_audio_url||!s.voiceover)continue
     try{const url=await tts(s.voiceover);if(url){await db.from('video_scenes').update({tts_audio_url:url,status:'vo_ready',updated_at:now()}).eq('id',s.id);ttsReady++}else{ttsFailed++}}catch(e){ttsFailed++;log('TTS failed',p.id,s.scene_no,e.message)}
   }
   const fresh=(await db.from('video_scenes').select('*').eq('project_id',p.id).order('scene_no')).data||[]
-  const automation={...(p.director_notes?.automation||{}),directed_at:now(),asset_ready:assets.ready,asset_failed:assets.failed,tts_ready:ttsReady,tts_failed:ttsFailed}
+  const automation={...(p.director_notes?.automation||{}),directed_at:p.director_notes?.automation?.directed_at||now(),asset_ready:assets.ready,asset_failed:assets.failed,tts_ready:ttsReady,tts_failed:ttsFailed}
   const mid=await db.from('video_projects').update({status:'asset_ready',updated_at:now(),director_notes:{...(p.director_notes||{}),automation}}).eq('id',p.id)
   if(mid.error)throw new Error(mid.error.message)
-  const render=await createRenderJob({...p,...nextProject,id:p.id},{scenes:fresh,settings:{preset:process.env.VIDEO_PRESET||'veryfast',crf:Number(process.env.VIDEO_CRF||22)}})
-  const row=await db.from('video_renders').insert({project_id:p.id,provider:render.provider||'local',status:render.status||'queued',output_url:render.output_url||render.url||null,error:render.error||null,settings:{automation:true}}).select().single()
-  if(row.error)throw new Error(row.error.message)
-  const final=await db.from('video_projects').update({status:render.status==='completed'?'ready':'rendering',updated_at:now(),director_notes:{...(p.director_notes||{}),automation:{...automation,render_created_at:now(),render_id:row.data?.id||null}}}).eq('id',p.id)
+  const row=await ensureRender({...p,status:'asset_ready'},fresh,{preset:process.env.VIDEO_PRESET||'veryfast',crf:Number(process.env.VIDEO_CRF||22)})
+  const finalStatus=['completed'].includes(row.status)?'ready':(row.status==='failed'?'failed':'rendering')
+  const final=await db.from('video_projects').update({status:finalStatus,updated_at:now(),director_notes:{...(p.director_notes||{}),automation:{...automation,render_created_at:automation.render_created_at||now(),render_id:row.id}}}).eq('id',p.id)
   if(final.error)throw new Error(final.error.message)
-  return {id:p.id,scenes:scenes.length,assetReady:assets.ready,assetFailed:assets.failed,ttsReady,ttsFailed,render:row.data}
+  return {id:p.id,scenes:fresh.length,assetReady:assets.ready,assetFailed:assets.failed,ttsReady,ttsFailed,render:row}
 }
 async function main(){
   if(!db)throw new Error('缺少 SUPABASE_URL 或 SUPABASE_SECRET_KEY')
   const q=await db.from('video_projects').select('*').eq('status','queued').order('updated_at',{ascending:true}).limit(limit)
   if(q.error)throw new Error(q.error.message)
   if(!q.data?.length){log('no queued projects');return}
-  for(const p of q.data){const claimed=await claim(p);if(!claimed){log('skip already claimed',p.id);continue}try{const out=await processProject(claimed);log('completed',JSON.stringify(out))}catch(e){await db.from('video_projects').update({status:'failed',updated_at:now(),director_notes:{...(claimed.director_notes||{}),automation:{...(claimed.director_notes?.automation||{}),failed_at:now(),error:String(e.message||e).slice(0,1000)}}}).eq('id',claimed.id);log('failed',claimed.id,e.message)}}
+  for(const p of q.data){const claimed=await claim(p);if(!claimed){log('skip already claimed',p.id);continue}try{const out=await processProject(claimed);log('completed',JSON.stringify(out))}catch(e){const message=String(e.message||e).slice(0,1000);await db.from('video_projects').update({status:'failed',retry_count:Number(claimed.retry_count||0)+1,updated_at:now(),director_notes:{...(claimed.director_notes||{}),automation:{...(claimed.director_notes?.automation||{}),failed_at:now(),error:message}}}).eq('id',claimed.id);log('failed',claimed.id,message)}}
 }
 main().catch(e=>{console.error(e);process.exitCode=1})
