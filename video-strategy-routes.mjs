@@ -15,7 +15,7 @@ async function auth(req,res,next){
   req.strategyDb=c;req.strategyUser=data.user;next()
 }
 async function project(req,id){return req.strategyDb.from('video_projects').select('*').eq('id',id).eq('user_id',req.strategyUser.id).single()}
-function derive(rows){
+export function derive(rows){
   const ordered=[...rows].sort((a,b)=>new Date(a.recorded_at)-new Date(b.recorded_at))
   const latest=ordered.at(-1),prev=ordered.at(-2)
   if(!latest)return []
@@ -28,9 +28,20 @@ function derive(rows){
   if(shares+favorites>likes&&views>0)out.push({rule_type:'utility',title:'收藏/分享信号突出',insight:'收藏与分享合计高于点赞，内容存在较强的实用或转发价值。',recommendation:'下一条增加清单、步骤、数据或可保存的信息结构。',confidence:0.8,evidence:{likes,shares,favorites}})
   return out
 }
+export async function refreshRules(db,userId,platform='douyin',projectId=null){
+  let q=db.from('video_performance_snapshots').select('*').eq('user_id',userId).eq('platform',platform).order('recorded_at',{ascending:true}).limit(100)
+  if(projectId)q=q.eq('project_id',projectId)
+  const snap=await q
+  if(snap.error)throw new Error(snap.error.message)
+  const rules=derive(snap.data||[])
+  const deact=await db.from('video_strategy_rules').update({active:false,updated_at:new Date().toISOString()}).eq('user_id',userId).eq('platform',platform)
+  if(deact.error)throw new Error(deact.error.message)
+  if(rules.length){const rows=rules.map(r=>({...r,user_id:userId,platform,scope:'account'}));const ins=await db.from('video_strategy_rules').insert(rows);if(ins.error)throw new Error(ins.error.message)}
+  return rules
+}
 function install(app){if(installed)return;installed=true
  app.get('/api/video/projects/:id/strategy',auth,async(req,res)=>{const p=await project(req,req.params.id);if(p.error)return bad(res,404,'视频项目不存在');const q=await req.strategyDb.from('video_performance_snapshots').select('*').eq('project_id',req.params.id).order('recorded_at',{ascending:true}).limit(50);if(q.error)return bad(res,500,q.error.message);const rules=derive(q.data||[]);res.json({data:rules,latest:(q.data||[]).at(-1)||null,previous:(q.data||[]).at(-2)||null})})
- app.post('/api/video/projects/:id/strategy/refresh',auth,async(req,res)=>{const p=await project(req,req.params.id);if(p.error)return bad(res,404,'视频项目不存在');const q=await req.strategyDb.from('video_performance_snapshots').select('*').eq('project_id',req.params.id).order('recorded_at',{ascending:true}).limit(50);if(q.error)return bad(res,500,q.error.message);const rules=derive(q.data||[]);await req.strategyDb.from('video_strategy_rules').update({active:false,updated_at:new Date().toISOString()}).eq('user_id',req.strategyUser.id).eq('platform',p.data.platform||'douyin');if(rules.length){const rows=rules.map(r=>({...r,user_id:req.strategyUser.id,platform:p.data.platform||'douyin',scope:'account'}));const ins=await req.strategyDb.from('video_strategy_rules').insert(rows);if(ins.error)return bad(res,500,ins.error.message)}res.json({data:rules,refreshed_at:new Date().toISOString()})})
+ app.post('/api/video/projects/:id/strategy/refresh',auth,async(req,res)=>{const p=await project(req,req.params.id);if(p.error)return bad(res,404,'视频项目不存在');try{const rules=await refreshRules(req.strategyDb,req.strategyUser.id,p.data.platform||'douyin',req.params.id);res.json({data:rules,refreshed_at:new Date().toISOString()})}catch(e){return bad(res,500,e.message)}})
  app.get('/api/video/strategy',auth,async(req,res)=>{const q=await req.strategyDb.from('video_strategy_rules').select('*').eq('user_id',req.strategyUser.id).eq('active',true).order('updated_at',{ascending:false}).limit(30);if(q.error)return bad(res,500,q.error.message);res.json({data:q.data||[]})})
 }
 const originalGet=express.application.get
