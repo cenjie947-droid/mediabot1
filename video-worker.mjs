@@ -12,7 +12,7 @@ const TTS_KEY=process.env.TTS_API_KEY||''
 const TTS_PATH=process.env.TTS_PATH||'/tts'
 
 async function ensureBucket(){
-  const {error}=await admin.storage.createBucket(BUCKET,{public:true,fileSizeLimit:50*1024*1024,allowedMimeTypes:['video/mp4']})
+  const {error}=await admin.storage.createBucket(BUCKET,{public:true,fileSizeLimit:100*1024*1024,allowedMimeTypes:['video/mp4']})
   if(error && !/already exists|duplicate/i.test(error.message||'')) console.warn('storage bucket:',error.message)
 }
 function audioUrl(data){return data?.audio_url||data?.audioUrl||data?.output_url||data?.url||data?.data?.audio_url||data?.data?.audioUrl||data?.data?.output_url||data?.data?.url||null}
@@ -25,26 +25,45 @@ async function synthesizeScene(scene){
   await admin.from('video_scenes').update({tts_audio_url:u,status:'vo_ready',updated_at:new Date().toISOString()}).eq('id',scene.id)
   return {...scene,tts_audio_url:u,status:'vo_ready'}
 }
+async function claim(row){
+  const {data,error}=await admin.from('video_renders').update({status:'rendering',error:null}).eq('id',row.id).eq('status','queued').select('id,project_id').maybeSingle()
+  if(error)throw error
+  return data||null
+}
 async function processOne(row){
-  await admin.from('video_renders').update({status:'rendering',error:null}).eq('id',row.id)
-  const {data:project,error:pe}=await admin.from('video_projects').select('*').eq('id',row.project_id).single();if(pe)throw pe
-  const {data:rawScenes,error:se}=await admin.from('video_scenes').select('*').eq('project_id',row.project_id).order('scene_no');if(se)throw se
-  const scenes=[]
-  for(const scene of rawScenes||[]) scenes.push(await synthesizeScene(scene))
-  const result=await renderProject({project,scenes})
-  const bytes=await fs.readFile(result.output)
-  const objectPath=`${project.user_id}/${project.id}/${row.id}.mp4`
-  const up=await admin.storage.from(BUCKET).upload(objectPath,bytes,{contentType:'video/mp4',upsert:true,cacheControl:'31536000'})
-  if(up.error)throw up.error
-  const publicUrl=admin.storage.from(BUCKET).getPublicUrl(objectPath).data.publicUrl
-  await admin.from('video_renders').update({status:'completed',output_url:publicUrl,error:null,finished_at:new Date().toISOString()}).eq('id',row.id)
-  await admin.from('video_projects').update({status:'ready',updated_at:new Date().toISOString()}).eq('id',project.id)
-  await fs.rm(result.workDir,{recursive:true,force:true})
-  console.log(`video render completed ${row.id}: ${publicUrl}`)
+  const claimed=await claim(row);if(!claimed)return false
+  const startedAt=Date.now()
+  let result=null
+  try{
+    const {data:project,error:pe}=await admin.from('video_projects').select('*').eq('id',claimed.project_id).single();if(pe)throw pe
+    const {data:rawScenes,error:se}=await admin.from('video_scenes').select('*').eq('project_id',claimed.project_id).order('scene_no');if(se)throw se
+    if(!rawScenes?.length)throw new Error('项目没有场景，无法渲染')
+    const scenes=[]
+    for(const scene of rawScenes) scenes.push(await synthesizeScene(scene))
+    result=await renderProject({project,scenes})
+    const bytes=await fs.readFile(result.output)
+    const objectPath=`${project.user_id}/${project.id}/${claimed.id}.mp4`
+    const up=await admin.storage.from(BUCKET).upload(objectPath,bytes,{contentType:'video/mp4',upsert:true,cacheControl:'31536000'})
+    if(up.error)throw up.error
+    const publicUrl=admin.storage.from(BUCKET).getPublicUrl(objectPath).data.publicUrl
+    const {error:re}=await admin.from('video_renders').update({status:'completed',output_url:publicUrl,error:null,finished_at:new Date().toISOString()}).eq('id',claimed.id);if(re)throw re
+    await admin.from('video_projects').update({status:'ready',updated_at:new Date().toISOString()}).eq('id',project.id)
+    console.log(`video render completed ${claimed.id} in ${Math.round((Date.now()-startedAt)/1000)}s: ${publicUrl}`)
+    return true
+  }catch(e){
+    const message=String(e?.message||e).slice(0,4000)
+    console.error(`video render failed ${claimed.id}:`,message)
+    await admin.from('video_renders').update({status:'failed',error:message,finished_at:new Date().toISOString()}).eq('id',claimed.id)
+    await admin.from('video_projects').update({status:'draft',updated_at:new Date().toISOString()}).eq('id',claimed.project_id)
+    return false
+  }finally{
+    if(result?.workDir)await fs.rm(result.workDir,{recursive:true,force:true}).catch(()=>{})
+  }
 }
 
 await ensureBucket()
 const {data:jobs,error}=await admin.from('video_renders').select('id,project_id').eq('status','queued').order('created_at',{ascending:true}).limit(Number(process.env.VIDEO_RENDER_BATCH||2))
 if(error) throw error
-for(const job of jobs||[]){try{await processOne(job)}catch(e){console.error(`video render failed ${job.id}:`,e);await admin.from('video_renders').update({status:'failed',error:String(e.message||e).slice(0,2000),finished_at:new Date().toISOString()}).eq('id',job.id);await admin.from('video_projects').update({status:'draft',updated_at:new Date().toISOString()}).eq('id',job.project_id)}}
-console.log(`video worker processed ${jobs?.length||0} queued renders`)
+let completed=0
+for(const job of jobs||[]) if(await processOne(job)) completed++
+console.log(`video worker processed ${jobs?.length||0} queued renders; completed ${completed}`)
