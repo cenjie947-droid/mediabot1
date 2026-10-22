@@ -38,6 +38,13 @@ async function update(p,fields){
 }
 async function process(p){
   const m=metaOf(p),provider=providerOf(p),attempts=Number(p.publish_attempts||0),payload=manifest(p)
+  const renderQuery=await db.from('video_renders').select('output_url,status').eq('project_id',p.id).eq('status','completed').order('finished_at',{ascending:false}).limit(1).maybeSingle()
+  if(renderQuery.error)throw renderQuery.error
+  payload.render_url=payload.render_url||renderQuery.data?.output_url||null
+  if(!payload.render_url){
+    await update(p,{publish_queued_at:null,publish_meta:{...m,publish_status:'blocked_no_render',publish_error:'没有找到已完成的视频渲染文件，未提交发布'}})
+    return 'blocked-no-render'
+  }
   if(p.external_work_id||p.external_url){
     await update(p,{publish_queued_at:null,publish_meta:{...m,publish_status:'published',last_checked_at:now()}})
     return 'already-published'
@@ -64,9 +71,9 @@ async function process(p){
     if(!response.ok||result.error)throw new Error(result.error||`adapter HTTP ${response.status}`)
     const workId=result.external_work_id||result.work_id||result.workId||null
     const workUrl=result.external_url||result.work_url||result.workUrl||result.url||null
-    const published=Boolean(workId||workUrl||result.status==='published')
+    const published=Boolean(workId||workUrl)
     const nextMeta={...m,publish_status:published?'published':(result.status||'awaiting_external_publish'),last_attempt_at:now(),adapter_response:result}
-    await update(p,{status:published?'published':'ready',external_work_id:workId,external_url:workUrl,publish_attempts:attempts+1,publish_queued_at:published?null:null,publish_meta:nextMeta})
+    await update(p,{status:published?'published':'ready',external_work_id:workId,external_url:workUrl,publish_attempts:attempts+1,publish_queued_at:null,publish_meta:nextMeta})
     return published?'published':'adapter-accepted-no-work-reference'
   }catch(e){
     const message=String(e?.message||e).slice(0,1000),nextAttempts=attempts+1,canRetry=retryable(message)&&nextAttempts<MAX_ATTEMPTS
