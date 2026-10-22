@@ -25,16 +25,25 @@
 
 ### RedFox
 
-RedFox 当前提供跨平台新媒体数据服务，包括抖音、小红书、快手、公众号、视频号、B站、今日头条等，并提供热榜、作品、账号、爆款等数据能力。
+RedFox 当前提供跨平台新媒体数据服务，覆盖抖音、小红书、公众号、快手、视频号、B站、今日头条等，并提供内容搜索、作品详情、账号、热榜洞察等能力。urlRedFox API 文档https://redfox.hk/apis
 
-抖音第一批已接入：
+当前代码**不会猜测或伪造 RedFox 的热榜 endpoint**。实际热榜接口通过 `REDFOX_TREND_ENDPOINTS_JSON` 显式配置，收到真实接口文档后即可接入。这样以后更换数据商只需要新增 Provider，不需要重写 Creator OS。
 
-- 每日热门作品榜：`POST https://redfox.hk/story/api/dy/search/likesRank`
-- 每日点赞飙升榜：`POST https://redfox.hk/story/api/dy/search/hotContentRank`
+示例结构：
 
-其中榜单数据由 RedFox 提供；项目不会自行绕过平台登录、验证码或访问控制。
+```json
+{
+  "douyin": {
+    "hot": {"method":"POST","url":"/实际的抖音热榜接口","body":{}},
+    "rising": {"method":"POST","url":"/实际的抖音上升榜接口","body":{}}
+  },
+  "xiaohongshu": {
+    "hot": {"method":"POST","url":"/实际的小红书热榜接口","body":{}}
+  }
+}
+```
 
-其他平台通过 `REDFOX_TREND_ENDPOINTS_JSON` 配置具体端点，因此未来更换数据商只需要新增 Provider，不需要重写 Creator OS。
+适配器会统一读取 `title / keyword / hot / growth / rank / url / views / likes / comments / shares / favorites` 等常见字段，并保存原始 JSON，避免丢失供应商数据。
 
 ## 环境变量
 
@@ -53,8 +62,8 @@ TOUTIAO_BRIDGE_URL
 
 REDFOX_API_KEY
 REDFOX_BASE_URL=https://redfox.hk
-REDFOX_DOUYIN_SOURCE=点赞排行榜
 REDFOX_TREND_ENDPOINTS_JSON={}
+TREND_SYNC_MINUTES=60
 ```
 
 **不要把 `REDFOX_API_KEY` 提交到 GitHub 或前端。**生产环境放 Render Environment Variables。
@@ -84,7 +93,7 @@ REDFOX_TREND_ENDPOINTS_JSON={}
 先执行：
 
 - `supabase/migrations/20261022_creator_os.sql`
-- `supabase/migrations/20261022_trend_hub.sql`
+- `supabase/migrations/20261023_multiplatform_trend_radar.sql`
 
 趋势表与旧的素材表分开。热点是**机会来源**，不是普通图片素材。
 
@@ -95,7 +104,7 @@ REDFOX_TREND_ENDPOINTS_JSON={}
 `render.yaml` 已配置：
 
 - Web：Vite + Express
-- Cron：每 5 分钟执行发布 worker，并在配置 RedFox Key 时同步热点
+- Cron：每 5 分钟执行发布 worker；热点按 `TREND_SYNC_MINUTES` 控制，默认每 60 分钟检查一次
 
 ## 本地运行
 
