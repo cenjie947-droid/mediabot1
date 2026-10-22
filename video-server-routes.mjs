@@ -20,12 +20,20 @@ async function auth(req,res,next){
 }
 function db(req){return req.videoDb}
 function pickAudioUrl(data){return data?.audio_url||data?.audioUrl||data?.output_url||data?.url||data?.data?.audio_url||data?.data?.audioUrl||data?.data?.output_url||data?.data?.url||null}
+async function projectFor(req,id){return db(req).from('video_projects').select('*').eq('id',id).eq('user_id',req.videoUser.id).single()}
+async function callTts(text,body={}){
+  if(!TTS_BASE)throw new Error('未配置 TTS_BASE_URL')
+  const r=await fetch(`${TTS_BASE}${TTS_PATH}`,{method:'POST',headers:{'Content-Type':'application/json',...(TTS_KEY?{Authorization:`Bearer ${TTS_KEY}`}:{})},body:JSON.stringify({text,voice:body.voice||process.env.TTS_VOICE||'zh-CN',speed:Number(body.speed||1),format:body.format||'mp3'}),signal:AbortSignal.timeout(60000)})
+  const data=await r.json().catch(()=>({}))
+  if(!r.ok)throw new Error(data.error||`TTS 服务 HTTP ${r.status}`)
+  return {data,audioUrl:pickAudioUrl(data)}
+}
 function install(app){
   if(installed)return
   installed=true
-  app.get('/api/video/config',auth,async(req,res)=>res.json({tts:{enabled:Boolean(TTS_BASE),path:TTS_PATH},render:renderConfig()}))
+  app.get('/api/video/config',auth,async(req,res)=>res.json({tts:{enabled:Boolean(TTS_BASE),path:TTS_PATH,voice:process.env.TTS_VOICE||'zh-CN'},render:renderConfig()}))
   app.get('/api/video/projects/:id',auth,async(req,res)=>{
-    const p=await db(req).from('video_projects').select('*').eq('id',req.params.id).eq('user_id',req.videoUser.id).single()
+    const p=await projectFor(req,req.params.id)
     if(p.error)return bad(res,404,'视频项目不存在')
     const [s,a,r]=await Promise.all([
       db(req).from('video_scenes').select('*').eq('project_id',req.params.id).order('scene_no'),
@@ -34,30 +42,41 @@ function install(app){
     ])
     res.json({project:p.data,scenes:s.data||[],assets:a.data||[],renders:r.data||[]})
   })
+  app.get('/api/video/renders/:id/status',auth,async(req,res)=>{
+    const q=await db(req).from('video_renders').select('*,video_projects!inner(user_id)').eq('id',req.params.id).eq('video_projects.user_id',req.videoUser.id).single()
+    if(q.error)return bad(res,404,'渲染任务不存在')
+    res.json({data:q.data})
+  })
   app.post('/api/video/projects/:id/assets',auth,async(req,res)=>{
-    const p=await db(req).from('video_projects').select('id').eq('id',req.params.id).eq('user_id',req.videoUser.id).single()
+    const p=await projectFor(req,req.params.id)
     if(p.error)return bad(res,404,'视频项目不存在')
     const b=req.body||{};if(!b.source_url)return bad(res,400,'素材 URL 不能为空')
     const q=await db(req).from('video_assets').insert({project_id:req.params.id,scene_id:b.scene_id||null,provider:String(b.provider||'manual'),kind:String(b.kind||'image'),source_url:String(b.source_url).slice(0,4000),title:String(b.title||'').slice(0,300),license_note:String(b.license_note||'').slice(0,500),metadata:b.metadata||{}}).select().single()
     if(q.error)return bad(res,500,q.error.message);res.status(201).json({data:q.data})
   })
   app.post('/api/video/projects/:id/tts',auth,async(req,res)=>{
-    if(!TTS_BASE)return bad(res,503,'未配置 TTS_BASE_URL')
-    const p=await db(req).from('video_projects').select('id').eq('id',req.params.id).eq('user_id',req.videoUser.id).single();if(p.error)return bad(res,404,'视频项目不存在')
+    const p=await projectFor(req,req.params.id);if(p.error)return bad(res,404,'视频项目不存在')
     const b=req.body||{},text=String(b.text||'').trim();if(!text)return bad(res,400,'TTS 文本不能为空')
-    const r=await fetch(`${TTS_BASE}${TTS_PATH}`,{method:'POST',headers:{'Content-Type':'application/json',...(TTS_KEY?{Authorization:`Bearer ${TTS_KEY}`}:{})},body:JSON.stringify({text,voice:b.voice||process.env.TTS_VOICE||'zh-CN',speed:Number(b.speed||1),format:b.format||'mp3'}),signal:AbortSignal.timeout(60000)})
-    const data=await r.json().catch(()=>({}));if(!r.ok)return bad(res,502,data.error||`TTS 服务 HTTP ${r.status}`)
-    const audioUrl=pickAudioUrl(data)
-    if(b.scene_id&&audioUrl){
-      const s=await db(req).from('video_scenes').update({tts_audio_url:audioUrl,status:'vo_ready',updated_at:new Date().toISOString()}).eq('id',b.scene_id).eq('project_id',req.params.id).select().single()
-      if(s.error)return bad(res,500,s.error.message)
+    try{const r=await callTts(text,b);if(b.scene_id&&r.audioUrl){const s=await db(req).from('video_scenes').update({tts_audio_url:r.audioUrl,status:'vo_ready',updated_at:new Date().toISOString()}).eq('id',b.scene_id).eq('project_id',req.params.id).select().single();if(s.error)return bad(res,500,s.error.message)}res.json({data:r.data,audio_url:r.audioUrl,scene_id:b.scene_id||null})}catch(e){return bad(res,502,e.message)}
+  })
+  app.post('/api/video/projects/:id/tts-all',auth,async(req,res)=>{
+    const p=await projectFor(req,req.params.id);if(p.error)return bad(res,404,'视频项目不存在')
+    const q=await db(req).from('video_scenes').select('*').eq('project_id',req.params.id).order('scene_no');if(q.error)return bad(res,500,q.error.message)
+    const results=[]
+    for(const scene of q.data||[]){
+      const text=String(scene.voiceover||'').trim()
+      if(!text){results.push({scene_id:scene.id,status:'skipped',reason:'empty voiceover'});continue}
+      try{const r=await callTts(text,req.body||{});if(!r.audioUrl)throw new Error('TTS 未返回音频 URL');const u=await db(req).from('video_scenes').update({tts_audio_url:r.audioUrl,status:'vo_ready',updated_at:new Date().toISOString()}).eq('id',scene.id).eq('project_id',req.params.id).select().single();if(u.error)throw u.error;results.push({scene_id:scene.id,status:'ready',audio_url:r.audioUrl})}catch(e){results.push({scene_id:scene.id,status:'failed',error:String(e.message||e).slice(0,500)})}
     }
-    res.json({data,audio_url:audioUrl,scene_id:b.scene_id||null})
+    res.json({data:results,ready:results.filter(x=>x.status==='ready').length,failed:results.filter(x=>x.status==='failed').length})
   })
   app.post('/api/video/projects/:id/render',auth,async(req,res)=>{
-    const p=await db(req).from('video_projects').select('*').eq('id',req.params.id).eq('user_id',req.videoUser.id).single();if(p.error)return bad(res,404,'视频项目不存在')
+    const p=await projectFor(req,req.params.id);if(p.error)return bad(res,404,'视频项目不存在')
     const s=await db(req).from('video_scenes').select('*').eq('project_id',req.params.id).order('scene_no');if(s.error)return bad(res,500,s.error.message)
+    if(!s.data?.length)return bad(res,400,'项目没有镜头，无法渲染')
     try{
+      const existing=await db(req).from('video_renders').select('*').eq('project_id',req.params.id).in('status',['queued','rendering']).order('created_at',{ascending:false}).limit(1).maybeSingle()
+      if(existing.data)return res.json({data:existing.data,duplicate:true,message:'已有渲染任务正在处理'})
       const job=await createRenderJob(p.data,{scenes:s.data||[],settings:req.body?.settings||{}})
       const row=await db(req).from('video_renders').insert({project_id:req.params.id,provider:job.provider||'http',status:job.status||'queued',output_url:job.output_url||job.url||null,error:job.error||null,settings:req.body?.settings||{},finished_at:job.status==='completed'?new Date().toISOString():null}).select().single()
       if(row.error)return bad(res,500,row.error.message)
