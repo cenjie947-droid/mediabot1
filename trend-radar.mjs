@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import { syncDouyinRanks, douyinRankConfig } from './douyin-ranks.mjs'
 
 const REDFOX_BASE_URL=(process.env.REDFOX_BASE_URL||'https://redfox.hk').replace(/\/$/,'')
 const REDFOX_API_KEY=process.env.REDFOX_API_KEY||''
@@ -49,7 +50,7 @@ async function callEndpoint(spec){
 async function callRaw(url,init){const r=await fetch(url,{...init,signal:AbortSignal.timeout(30000)});const text=await r.text();let json;try{json=JSON.parse(text)}catch{throw new Error(`RedFox 返回非 JSON：HTTP ${r.status}`)}if(!r.ok||[401,403].includes(r.status))throw new Error(json.msg||json.message||`RedFox 请求失败：HTTP ${r.status}`);if(json.code&&Number(json.code)!==2000)throw new Error(json.msg||json.message||`RedFox code ${json.code}`);return json}
 function configuredEndpoints(){const cfg=endpointConfig();const out=[];for(const [platform,groups] of Object.entries(cfg||{})){for(const [kind,spec] of Object.entries(groups||{})){if(spec?.url)out.push({platform,kind,...spec})}}return out}
 
-export function trendConfig(){return {baseUrl:REDFOX_BASE_URL,hasApiKey:Boolean(REDFOX_API_KEY),endpoints:configuredEndpoints().map(x=>({platform:x.platform,kind:x.kind,url:x.url})),douyin:{accountWorksPath:DOUYIN_WORKS_PATH,enabled:Boolean(REDFOX_API_KEY)}}}
+export function trendConfig(){return {baseUrl:REDFOX_BASE_URL,hasApiKey:Boolean(REDFOX_API_KEY),endpoints:configuredEndpoints().map(x=>({platform:x.platform,kind:x.kind,url:x.url})),douyin:{accountWorksPath:DOUYIN_WORKS_PATH,enabled:Boolean(REDFOX_API_KEY),ranks:douyinRankConfig()}}}
 
 export async function queryDouyinAccountWorks({accountId='',authorUrl='',secUserId='',offset=0,sortType='_2',publishTimeStart='',publishTimeEnd='',source=''}={}, {db,userId,persist=true}={}){
   if(!REDFOX_API_KEY)throw new Error('未配置 REDFOX_API_KEY')
@@ -75,11 +76,17 @@ export async function queryDouyinAccountWorks({accountId='',authorUrl='',secUser
 
 export async function syncRedfoxTrends(db,userId){
   if(!REDFOX_API_KEY)throw new Error('未配置 REDFOX_API_KEY')
-  const endpoints=configuredEndpoints(); if(!endpoints.length)throw new Error('未配置 REDFOX_TREND_ENDPOINTS_JSON；请把 RedFox 实际热榜接口映射到平台/类型后再同步')
-  const summary=[];
+  const endpoints=configuredEndpoints(); const summary=[]
   for(const spec of endpoints){
-    const {data:source}=await db.from('trend_sources').insert({user_id:userId,provider:'redfox',platform:spec.platform,name:`RedFox ${spec.platform} ${spec.kind}`,enabled:true,config:{url:spec.url,kind:spec.kind},status:'ready'}).select('id').single();
-    try{const raw=await callEndpoint(spec);const items=normalize(raw,spec.platform,spec.kind);if(items.length){const rows=items.map(x=>({...x,user_id:userId,source_id:source.id}));const {data,error}=await db.from('trend_items').insert(rows).select('*');if(error)throw error;for(const item of data||[]){const key=hashKey(item.title.toLowerCase().replace(/\s+/g,' '));const {data:event,error:eventError}=await db.from('trend_events').upsert({user_id:userId,canonical_key:key,title:item.title,hot_score:Number(item.hot_score||0),growth_score:Number(item.growth_score||0),platforms:[item.platform],last_seen_at:item.observed_at},{onConflict:'user_id,canonical_key'}).select('*').single();if(eventError)throw eventError;await db.from('trend_event_items').upsert({event_id:event.id,trend_item_id:item.id},{onConflict:'event_id,trend_item_id'})}await db.from('trend_sources').update({last_sync_at:new Date().toISOString(),status:'ready',last_error:null}).eq('id',source.id);summary.push({platform:spec.platform,kind:spec.kind,count:items.length})}else{summary.push({platform:spec.platform,kind:spec.kind,count:0})}}catch(error){await db.from('trend_sources').update({status:'error',last_error:error.message,last_sync_at:new Date().toISOString()}).eq('id',source.id);summary.push({platform:spec.platform,kind:spec.kind,error:error.message})}}
+    const {data:source}=await db.from('trend_sources').insert({user_id:userId,provider:'redfox',platform:spec.platform,name:`RedFox ${spec.platform} ${spec.kind}`,enabled:true,config:{url:spec.url,kind:spec.kind},status:'ready'}).select('id').single()
+    try{const raw=await callEndpoint(spec);const items=normalize(raw,spec.platform,spec.kind);if(items.length){const rows=items.map(x=>({...x,user_id:userId,source_id:source.id}));const {data,error}=await db.from('trend_items').insert(rows).select('*');if(error)throw error;for(const item of data||[]){const key=hashKey(item.title.toLowerCase().replace(/\s+/g,' '));const {data:event,error:eventError}=await db.from('trend_events').upsert({user_id:userId,canonical_key:key,title:item.title,hot_score:Number(item.hot_score||0),growth_score:Number(item.growth_score||0),platforms:[item.platform],last_seen_at:item.observed_at},{onConflict:'user_id,canonical_key'}).select('*').single();if(eventError)throw eventError;await db.from('trend_event_items').upsert({event_id:event.id,trend_item_id:item.id},{onConflict:'event_id,trend_item_id'})}await db.from('trend_sources').update({last_sync_at:new Date().toISOString(),status:'ready',last_error:null}).eq('id',source.id);summary.push({platform:spec.platform,kind:spec.kind,count:items.length})}else{summary.push({platform:spec.platform,kind:spec.kind,count:0})}}catch(error){await db.from('trend_sources').update({status:'error',last_error:error.message,last_sync_at:new Date().toISOString()}).eq('id',source.id);summary.push({platform:spec.platform,kind:spec.kind,error:error.message})}
+  }
+  const {data:rankSource}=await db.from('trend_sources').select('last_sync_at').eq('user_id',userId).eq('provider','redfox').eq('platform','douyin').eq('name','RedFox 抖音每日热门作品榜').maybeSingle()
+  const rankFresh=rankSource?.last_sync_at && Date.now()-new Date(rankSource.last_sync_at).getTime()<12*60*60*1000
+  if(!rankFresh){
+    try{summary.push({platform:'douyin',kind:'daily_ranks',...(await syncDouyinRanks(db,userId))})}
+    catch(error){summary.push({platform:'douyin',kind:'daily_ranks',error:error.message})}
+  }
   return summary
 }
 
