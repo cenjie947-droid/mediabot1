@@ -14,7 +14,7 @@ function isAutomationProject(p){
 }
 function isRetryable(errorText){
   if(!errorText)return false
-  return /timeout|timed out|http 429|http 5\\d\\d|network|fetch|下载|素材|tts|ai|渲染|render|连接|未返回|temporar|econn/i.test(errorText)
+  return /timeout|timed out|http 429|http 5\d\d|network|fetch|下载|素材|tts|ai|渲染|render|连接|未返回|temporar|econn/i.test(errorText)
 }
 
 async function main(){
