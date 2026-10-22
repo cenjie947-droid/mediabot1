@@ -76,6 +76,14 @@ services:
         sync: false
       - key: SUPABASE_SECRET_KEY
         sync: false
+      - key: TTS_BASE_URL
+        sync: false
+      - key: TTS_API_KEY
+        sync: false
+      - key: TTS_PATH
+        sync: false
+      - key: TTS_VOICE
+        sync: false
       - key: VIDEO_STORAGE_BUCKET
         value: video-renders
       - key: VIDEO_RENDER_BATCH
