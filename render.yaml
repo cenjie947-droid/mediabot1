@@ -113,6 +113,23 @@ services:
       - key: VIDEO_AUTOMATION_MAX_RETRIES
         value: "2"
   - type: cron
+    name: creator-os-video-performance
+    runtime: node
+    schedule: "*/15 * * * *"
+    buildCommand: npm install
+    startCommand: node video-performance-worker.mjs
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: REDFOX_API_KEY
+        sync: false
+      - key: REDFOX_BASE_URL
+        sync: false
+      - key: VIDEO_PERFORMANCE_BATCH
+        value: "20"
+  - type: cron
     name: creator-os-video-renderer
     runtime: docker
     schedule: "*/5 * * * *"
