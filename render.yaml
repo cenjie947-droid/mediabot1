@@ -67,6 +67,69 @@ services:
       - key: REDFOX_TREND_ENDPOINTS_JSON
         sync: false
   - type: cron
+    name: creator-os-video-automation
+    runtime: node
+    schedule: "*/5 * * * *"
+    buildCommand: npm install
+    startCommand: node video-automation-worker.mjs
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: AI_BASE_URL
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_MODEL
+        sync: false
+      - key: TTS_BASE_URL
+        sync: false
+      - key: TTS_API_KEY
+        sync: false
+      - key: TTS_PATH
+        sync: false
+      - key: TTS_VOICE
+        sync: false
+      - key: VIDEO_RENDERER
+        value: local
+      - key: VIDEO_AUTOMATION_BATCH
+        value: "2"
+      - key: VIDEO_PRESET
+        value: veryfast
+      - key: VIDEO_CRF
+        value: "22"
+  - type: cron
+    name: creator-os-video-recovery
+    runtime: node
+    schedule: "*/5 * * * *"
+    buildCommand: npm install
+    startCommand: node video-automation-recovery.mjs
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: VIDEO_AUTOMATION_MAX_RETRIES
+        value: "2"
+  - type: cron
+    name: creator-os-video-performance
+    runtime: node
+    schedule: "*/15 * * * *"
+    buildCommand: npm install
+    startCommand: node video-performance-worker.mjs
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: REDFOX_API_KEY
+        sync: false
+      - key: REDFOX_BASE_URL
+        sync: false
+      - key: VIDEO_PERFORMANCE_BATCH
+        value: "20"
+  - type: cron
     name: creator-os-video-renderer
     runtime: docker
     schedule: "*/5 * * * *"
@@ -94,3 +157,27 @@ services:
         value: veryfast
       - key: VIDEO_CRF
         value: "22"
+
+  - type: cron
+    name: creator-os-video-publish
+    runtime: node
+    schedule: "*/5 * * * *"
+    buildCommand: npm install
+    startCommand: npm run video:publish
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: VIDEO_PUBLISH_BRIDGE_URL
+        sync: false
+      - key: VIDEO_PUBLISH_CUSTOM_URL
+        sync: false
+      - key: VIDEO_PUBLISH_SHARED_SECRET
+        sync: false
+      - key: VIDEO_PUBLISH_BATCH
+        value: "5"
+      - key: VIDEO_PUBLISH_MAX_ATTEMPTS
+        value: "3"
+      - key: VIDEO_PUBLISH_TIMEOUT_MS
+        value: "30000"
