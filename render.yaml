@@ -28,6 +28,14 @@ services:
         sync: false
       - key: TOUTIAO_BRIDGE_URL
         sync: false
+      - key: REDFOX_API_KEY
+        sync: false
+      - key: REDFOX_BASE_URL
+        sync: false
+      - key: REDFOX_DOUYIN_SOURCE
+        sync: false
+      - key: REDFOX_TREND_ENDPOINTS_JSON
+        sync: false
   - type: cron
     name: creator-os-publisher
     schedule: "*/5 * * * *"
@@ -39,4 +47,12 @@ services:
       - key: SUPABASE_SECRET_KEY
         sync: false
       - key: ACCOUNT_ENCRYPTION_KEY
+        sync: false
+      - key: REDFOX_API_KEY
+        sync: false
+      - key: REDFOX_BASE_URL
+        sync: false
+      - key: REDFOX_DOUYIN_SOURCE
+        sync: false
+      - key: REDFOX_TREND_ENDPOINTS_JSON
         sync: false
