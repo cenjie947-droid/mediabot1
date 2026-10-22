@@ -1,37 +1,40 @@
 # 创作中枢 Creator OS
 
-一个参考成熟内容运营助手工作流、面向 **微信公众号 + 今日头条** 的内容生产与发布 Web 应用。
+一个参考 BnsBot 核心工作流、面向 **公众号 + 今日头条 + 抖音短视频机会** 的内容运营系统。
 
-> 不是 Binance Square 助手，也不包含 Binance、抖音或小红书业务。旧 MediaBot 的平台代码、雷达、视频剪辑模块和旧迁移已从本分支移除。
+核心不是普通 CMS，而是：
+
+`多平台热点 → Event 聚合 → 内容机会评分 → 平台独立创作 → 发布排期 → 效果回流`
 
 ## 产品结构
 
-- **总览**：内容资产、已发布、待审核、排期、账号状态
-- **创作者台**：标题 / 摘要 / 正文 / 封面，AI 生成、润色、保存草稿、立即发布、定时发布
+- **总览**：自动化状态、热点机会、内容资产、发布排期
+- **热点雷达**：统一接入 RedFox 等数据供应商，把抖音/小红书/快手/公众号/头条等热点归一为 Event
+- **创作者台**：一条热点分别生成公众号深度稿、头条高密度图文、抖音独立短视频导演方案
 - **账号**：多公众号、多头条号管理；敏感配置只在服务端处理
-- **发帖记录**：草稿、排期、已发布、失败统一记录
-- **效果**：阅读、点赞、评论、分享等作品表现
-- **排行榜**：按历史表现查看自己的内容冠军
-- **模板**：公众号深度文章、头条高点击、双平台主稿等可复用模板
-- **素材库**：封面、图片、参考链接统一归档
-- **AI 助手**：选题、标题、正文、润色、内容体检
-- **我的**：工作区和安全设置
+- **发帖记录**：草稿、排期、发布、失败统一记录
+- **效果**：阅读、点赞、评论、分享等真实数据
+- **排行榜**：按历史表现查看内容冠军
+- **模板**：模板是内容策略，不只是文字占位符
+- **素材库**：封面、图片、参考链接等创作资产
+- **AI 助手**：选题、标题、正文、视频脚本与结构分析
 
-## 平台发布
+## 热点数据层
 
-### 微信公众号
+第一版采用 **Provider Adapter** 架构，不把产品锁死在某一家数据商。
 
-使用微信公众号官方接口完成：
+### RedFox
 
-`AppID/AppSecret → Access Token → 上传封面 → 新建草稿 → 提交发布`
+RedFox 当前提供跨平台新媒体数据服务，包括抖音、小红书、快手、公众号、视频号、B站、今日头条等，并提供热榜、作品、账号、爆款等数据能力。
 
-账号凭据加密保存在 `creator_accounts.secret_payload`，不会发送到浏览器。生产环境请务必设置 `ACCOUNT_ENCRYPTION_KEY`。
+抖音第一批已接入：
 
-### 今日头条
+- 每日热门作品榜：`POST https://redfox.hk/story/api/dy/search/likesRank`
+- 每日点赞飙升榜：`POST https://redfox.hk/story/api/dy/search/hotContentRank`
 
-头条没有在本项目里伪造“官方开放 API”。当前设计为 **浏览器自动化桥接适配器**：Creator OS 将标题、正文、封面和作品 ID发送到你配置的桥接服务，由桥接服务使用真实登录态完成发布。这样可以独立替换 Playwright / Chrome 自动化实现，也不会把 Cookie 放进 Creator OS 前端。
+其中榜单数据由 RedFox 提供；项目不会自行绕过平台登录、验证码或访问控制。
 
-社区已有可参考实现，例如 `xc-2000/toutiao-auto-publisher`、`openclaw-cn/toutiao-ops` 等；本项目只借鉴公开的工作流设计，不复制其代码或绕过平台安全机制。
+其他平台通过 `REDFOX_TREND_ENDPOINTS_JSON` 配置具体端点，因此未来更换数据商只需要新增 Provider，不需要重写 Creator OS。
 
 ## 环境变量
 
@@ -47,7 +50,52 @@ AI_API_KEY
 AI_MODEL=gpt-4o-mini
 PUBLIC_APP_URL
 TOUTIAO_BRIDGE_URL
+
+REDFOX_API_KEY
+REDFOX_BASE_URL=https://redfox.hk
+REDFOX_DOUYIN_SOURCE=点赞排行榜
+REDFOX_TREND_ENDPOINTS_JSON={}
 ```
+
+**不要把 `REDFOX_API_KEY` 提交到 GitHub 或前端。**生产环境放 Render Environment Variables。
+
+## 平台发布
+
+### 微信公众号
+
+使用微信公众号官方接口：
+
+`AppID/AppSecret → Access Token → 上传封面 → 新建草稿 → 提交发布`
+
+### 今日头条
+
+不伪造不存在的官方发布 API。当前使用独立浏览器自动化桥接服务承接真实登录态；Creator OS 只发送内容 payload，不把 Cookie 放进前端。
+
+### 抖音
+
+第一阶段重点是**热点与视频创作智能**，不是把文章改成视频。视频会独立生成：
+
+`Event → Hook → 时长 → 镜头 → 旁白 → 屏幕文字 → CTA → 后续渲染`
+
+发布适配器后续再接入，不与热点数据层耦合。
+
+## Supabase
+
+先执行：
+
+- `supabase/migrations/20261022_creator_os.sql`
+- `supabase/migrations/20261022_trend_hub.sql`
+
+趋势表与旧的素材表分开。热点是**机会来源**，不是普通图片素材。
+
+本次迁移是 additive，不会删除线上旧表或旧数据。GitHub 中移除旧 MediaBot 文件，也不会自动删除已经部署的 Supabase 数据；线上数据清理必须单独确认。
+
+## Render
+
+`render.yaml` 已配置：
+
+- Web：Vite + Express
+- Cron：每 5 分钟执行发布 worker，并在配置 RedFox Key 时同步热点
 
 ## 本地运行
 
@@ -57,33 +105,16 @@ npm run build
 npm start
 ```
 
-开发模式：
+开发：
 
 ```bash
 npm run dev
 ```
 
-## Supabase
-
-先执行：
-
-`supabase/migrations/20261022_creator_os.sql`
-
-迁移会建立账号、内容、发布任务、模板、素材和效果数据表，并启用按用户隔离的 RLS。
-
-**注意：** 删除旧迁移文件不会自动删除已经部署到 Supabase 的旧表/旧数据。本次改造针对 GitHub 仓库代码和新版本 schema；如果你还要清理线上 Supabase 中旧 MediaBot 数据，应在确认后单独执行数据库清理迁移。
-
-## Render
-
-`render.yaml` 已配置：
-
-- Web 服务：构建 Vite + 启动 Express
-- Cron：每 5 分钟执行排期发布 worker
-
 ## 安全原则
 
-- 不在前端保存 AppSecret、Cookie、Service Role Key
-- 平台未接入或授权失败时绝不伪报“发布成功”
-- 头条自动化由独立桥接层承接登录态
-- 生产环境必须设置 `ACCOUNT_ENCRYPTION_KEY`
-- AI 输出用于辅助创作，热点事实、数据和引用必须人工核验
+- 不在前端保存 AppSecret、Cookie、Service Role Key、RedFox API Key
+- 数据供应商失败时不伪造热点或发布成功
+- AI 输出必须人工核验事实
+- 视频素材和音乐必须由使用者确认拥有合法使用权
+- 不绕过登录、验证码、访问控制或平台反爬机制
