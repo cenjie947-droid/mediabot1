@@ -8,7 +8,7 @@ async function fetchMedia(admin, mediaUrls) {
   return { blob: await r.blob(), type: r.headers.get('content-type') || 'video/mp4' }
 }
 
-async function douyinPublish(job, account, content, secret) {
+async function douyinPublish(admin, job, account, content, secret) {
   if (!secret?.access_token) throw new Error('抖音账号缺少 access_token，请重新授权')
   const openId = account.external_account_id || secret.metadata?.open_id
   if (!openId) throw new Error('抖音账号缺少 open_id，请重新授权')
@@ -35,27 +35,41 @@ async function douyinPublish(job, account, content, secret) {
 }
 
 export async function publishJobs(admin,jobs){
-  let published=0, failed=0, results=[]
+  let published=0, failed=0, skipped=0, results=[]
   for(const job of jobs){
     try{
-      await admin.from('publish_jobs').update({status:'publishing',started_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id)
+      // Only queued jobs may start. This prevents concurrent runs from re-sending
+      // jobs that are already publishing or have reached a terminal state.
+      const {data:claimed,error:claimError}=await admin.from('publish_jobs').update({status:'publishing',started_at:new Date().toISOString(),updated_at:new Date().toISOString()}).eq('id',job.id).eq('status','queued').select('id').maybeSingle()
+      if(claimError) throw new Error('无法锁定发布任务：'+claimError.message)
+      if(!claimed){skipped++;results.push({job:job.id,ok:false,skipped:true,reason:'任务已被处理或不再处于排队状态'});continue}
       const {data:account}=await admin.from('social_accounts').select('*').eq('id',job.social_account_id).single()
       const {data:content}=await admin.from('content_items').select('*').eq('id',job.content_id).single()
-      const {data:secret}=await admin.schema('private').from('social_account_secrets').select('*').eq('social_account_id',job.social_account_id).single()
+      const {data:secret}=await admin.from('social_account_secrets').select('*').eq('social_account_id',job.social_account_id).single()
       if(!account||!content) throw new Error('账号或内容不存在')
+      if(account.user_id!==job.user_id||content.user_id!==job.user_id) throw new Error('发布任务关联的账号或内容不属于该用户')
+      if(account.status!=='connected') throw new Error('账号授权状态无效，请重新完成官方授权')
+      if(content.platform&&content.platform!=='all'&&content.platform!==job.platform) throw new Error('内容目标平台与发布任务不一致')
       let out
-      if(job.platform==='douyin') out=await douyinPublish(job,account,content,secret)
+      if(job.platform==='douyin') out=await douyinPublish(admin,job,account,content,secret)
       else throw new Error('小红书真实发布需要官方开放平台应用审核通过后启用；当前版本已预留安全适配器，不使用模拟发布')
-      await admin.from('publish_jobs').update({status:'published',published_at:new Date().toISOString(),external_id:out.external_id||null,metadata:out.raw||{},updated_at:new Date().toISOString()}).eq('id',job.id)
-      await admin.from('content_items').update({status:'published',published_at:new Date().toISOString()}).eq('id',job.content_id)
+      const now=new Date().toISOString()
+      const {error:finishError}=await admin.from('publish_jobs').update({status:'published',published_at:now,external_id:out.external_id||null,metadata:out.raw||{},error_message:null,updated_at:now}).eq('id',job.id).eq('status','publishing')
+      if(finishError) throw new Error('平台已返回成功，但任务状态更新失败；请核对平台记录，勿直接重试：'+finishError.message)
+      const {error:contentError}=await admin.from('content_items').update({status:'published',published_at:now}).eq('id',job.content_id).eq('user_id',job.user_id)
+      if(contentError) throw new Error('平台已返回成功，但内容状态更新失败；请核对平台记录：'+contentError.message)
       await admin.from('run_logs').insert({user_id:job.user_id,task_type:'publish',level:'success',message:`发布成功：${content.title}`,metadata:{job_id:job.id,platform:job.platform,external_id:out.external_id}})
       published++; results.push({job:job.id,ok:true,external_id:out.external_id})
     }catch(e){
       failed++
-      await admin.from('publish_jobs').update({status:'failed',error_message:e.message,updated_at:new Date().toISOString()}).eq('id',job.id)
-      await admin.from('run_logs').insert({user_id:job.user_id,task_type:'publish',level:'error',message:`发布失败：${e.message}`,metadata:{job_id:job.id,platform:job.platform}})
-      results.push({job:job.id,ok:false,error:e.message})
+      const message=String(e?.message||e)
+      // If the platform already confirmed publication but our database update failed,
+      // do not label it retryable: a retry could create a duplicate post.
+      const terminalStatus = message.includes('平台已返回成功') ? 'needs_review' : 'failed'
+      await admin.from('publish_jobs').update({status:terminalStatus,error_message:message,updated_at:new Date().toISOString()}).eq('id',job.id).eq('status','publishing')
+      await admin.from('run_logs').insert({user_id:job.user_id,task_type:'publish',level:'error',message:`发布失败：${message}`,metadata:{job_id:job.id,platform:job.platform}})
+      results.push({job:job.id,ok:false,error:message})
     }
   }
-  return {checked:jobs.length,published,failed,results}
+  return {checked:jobs.length,published,failed,skipped,results}
 }

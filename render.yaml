@@ -57,3 +57,7 @@ services:
         sync: false
       - key: HOT_FEEDS
         sync: false
+      - key: DOUYIN_CLIENT_KEY
+        sync: false
+      - key: DOUYIN_CLIENT_SECRET
+        sync: false

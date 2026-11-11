@@ -107,7 +107,7 @@ async function executeTask(task) {
   if (task.task_type==='hot_fetch') result=await hotFetch(task.user_id,config)
   else if (task.task_type==='ai_score') result=await aiScore(task.user_id,config)
   else if (task.task_type==='generate') result=await generate(task.user_id,config)
-  else if (task.task_type==='publish') { const { publishJobs } = await import('./publishers.mjs'); const { data: jobs, error } = await admin.from('publish_jobs').select('*').eq('user_id',task.user_id).eq('status','queued').order('scheduled_at',{ascending:true}).limit(Number(config.limit||5)); if(error) throw new Error(error.message); result=await publishJobs(admin,jobs||[]) }
+  else if (task.task_type==='publish') { const { publishJobs } = await import('./publishers.mjs'); const now=new Date().toISOString(); const { data: jobs, error } = await admin.from('publish_jobs').select('*').eq('user_id',task.user_id).eq('status','queued').or('scheduled_at.is.null,scheduled_at.lte.'+now).order('scheduled_at',{ascending:true}).limit(Number(config.limit||5)); if(error) throw new Error(error.message); result=await publishJobs(admin,jobs||[]) }
   else if (task.task_type==='sync_metrics') result={ skipped:true, reason:'平台数据同步接口尚未接入' }
     else if (task.task_type==='radar_fetch') {
   const { fetchDouyinRadar } = await import('./radar.mjs')
@@ -146,4 +146,17 @@ export async function runAutomation({ userId=null, force=false }={}) {
     }
   }
   return {checked:(tasks||[]).length,due:due.length,results}
+}
+
+
+// Process due publish jobs independently of optional user-created automation rules.
+// The Render cron worker invokes this every 15 minutes; publishJobs atomically claims
+// each row so overlapping runs cannot intentionally send the same queued job twice.
+export async function runDuePublishJobs({ limit=50 }={}) {
+  const now=new Date().toISOString()
+  const { data: jobs, error } = await admin.from('publish_jobs').select('*').eq('status','queued').or('scheduled_at.is.null,scheduled_at.lte.'+now).order('scheduled_at',{ascending:true}).limit(Math.max(1,Math.min(100,Number(limit)||50)))
+  if(error) throw new Error('读取到期发布任务失败：'+error.message)
+  if(!jobs?.length) return { checked:0,published:0,failed:0,skipped:0,results:[] }
+  const { publishJobs } = await import('./publishers.mjs')
+  return publishJobs(admin,jobs)
 }

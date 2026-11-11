@@ -3,12 +3,14 @@ import './style.css'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
+const hasSupabaseConfig = Boolean(SUPABASE_URL && SUPABASE_KEY)
 
-if (!SUPABASE_URL || !SUPABASE_KEY) {
-  console.warn('MediaBot: missing VITE_SUPABASE_URL or VITE_SUPABASE_PUBLISHABLE_KEY')
+if (!hasSupabaseConfig) {
+  console.warn('MediaBot: Supabase is not configured; sign-in is disabled and only read-only demo mode is available.')
 }
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
+// Keep the UI bootable without credentials. These placeholders are never valid auth credentials.
+const supabase = createClient(SUPABASE_URL || 'http://127.0.0.1:54321', SUPABASE_KEY || 'demo-anon-key-not-valid', {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
@@ -17,20 +19,16 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 })
 
 const pages = [
-  ['dashboard', 'Dashboard'],
-  ['hot', '爆款雷达'],
-  ['remix', '自动剪辑'],
-  ['create', 'AI 写文案'],
-  ['library', '内容库'],
-  ['schedule', '发布计划'],
-  ['accounts', '账号接入'],
-  ['tasks', '云端任务'],
-  ['logs', '运行日志']
+  ['dashboard', '总览'], ['studio', '创作者台'], ['accounts', '广场账号'], ['posts', '发帖记录'],
+  ['effects', '效果分析'], ['leaderboard', '排行榜'], ['templates', '模板中心'], ['materials', '素材库'], ['ai', 'AI 助手'], ['me', '个人中心'],
+  ['hot', '爆款雷达'], ['remix', '自动剪辑'], ['create', 'AI 写文案'], ['library', '内容库'], ['schedule', '发布计划'], ['tasks', '云端任务'], ['logs', '运行日志']
 ]
 
 let user = null
+let demoMode = false
 let active = 'dashboard'
-let data = { hot: [], content: [], tasks: [], logs: [], accounts: [], radar: [], radarPrefs: { watched_categories: ['伤感','情感'], production_mode: 'market' } }
+let editingContentId = null
+let data = { hot: [], content: [], tasks: [], logs: [], accounts: [], jobs: [], radar: [], radarPrefs: { watched_categories: ['伤感','情感'], production_mode: 'market' } }
 let radarCategory = '全部赛道'
 const radarCategories = ['伤感','搞笑','情感','美食','美女','汽车','宠物','知识','影视','游戏','财经','其他']
 
@@ -70,6 +68,7 @@ $('#app').innerHTML = `
         <input id="password" type="password" placeholder="密码（至少 6 位）" autocomplete="current-password" minlength="6" required>
         <button id="loginBtn" type="submit">登录</button>
         <button type="button" id="signup" class="secondary">注册账号</button>
+        <button type="button" id="demoLogin" class="secondary">进入演示模式（无需 API 密钥）</button>
         <div id="authMsg" role="status"></div>
       </form>
     </div>
@@ -77,10 +76,10 @@ $('#app').innerHTML = `
 
 const nav = $('#nav')
 const navGroups = [
-  { title: '工作台', ids: ['dashboard'] },
-  { title: '发现与创作', ids: ['hot', 'create', 'remix', 'library'] },
-  { title: '发布与自动化', ids: ['schedule', 'accounts', 'tasks'] },
-  { title: '系统', ids: ['logs'] }
+  { title: '工作台', ids: ['dashboard', 'studio', 'posts', 'effects', 'leaderboard'] },
+  { title: '内容创作', ids: ['hot', 'ai', 'templates', 'materials', 'remix'] },
+  { title: '账号与发布', ids: ['accounts', 'schedule', 'tasks'] },
+  { title: '账户', ids: ['me', 'logs'] }
 ]
 for (const group of navGroups) {
   const section = document.createElement('div')
@@ -128,6 +127,7 @@ function setAuthMessage(message, kind = '') {
 }
 
 async function currentSession() {
+  if (!hasSupabaseConfig) return null
   const { data: result, error } = await supabase.auth.getSession()
   if (error) throw error
   if (result.session) return result.session
@@ -144,13 +144,49 @@ async function requireSession() {
 }
 
 async function apiFetch(url, options = {}) {
+  if (demoMode) throw new Error('演示模式为只读状态，请登录真实账号后再执行此操作。')
   const session = await requireSession()
   const headers = new Headers(options.headers || {})
   headers.set('Authorization', `Bearer ${session.access_token}`)
   return fetch(url, { ...options, headers })
 }
 
+async function loadDemo() {
+  const fixture = {
+    hot: [
+      { id:'demo-topic-001', title:'一周效率提升小技巧', source:'演示数据', ai_score:92, category:'知识', platform:'douyin', description:'从简单可执行的习惯切入' },
+      { id:'demo-topic-002', title:'平价好物真实体验', source:'演示数据', ai_score:87, category:'生活', platform:'xiaohongshu', description:'用真实使用场景呈现体验' },
+      { id:'demo-topic-003', title:'新手常见误区盘点', source:'演示数据', ai_score:81, category:'教程', platform:'douyin', description:'用常见错误引出解决方法' }
+    ],
+    content: [
+      { id:'demo-content-001', title:'三步整理桌面，让工作更专注', platform:'xiaohongshu', status:'draft', body:'从桌面分区、减少视觉干扰和固定收纳位置三个角度分享。', created_at:new Date().toISOString() },
+      { id:'demo-content-002', title:'新手提升效率的三个习惯', platform:'douyin', status:'scheduled_demo', body:'开头提出痛点，中段展示三个可执行习惯，结尾邀请讨论。', scheduled_at:'2030-01-02T10:00:00.000Z', created_at:new Date().toISOString() },
+      { id:'demo-content-003', title:'一件日常好物的使用记录', platform:'xiaohongshu', status:'published_demo', body:'以个人体验为主，明确使用场景和适用边界。', created_at:new Date().toISOString() }
+    ],
+    tasks: [], jobs: [], logs: [{id:'demo-log-1',created_at:new Date().toISOString(),level:'info',message:'演示模式已启动；所有数据均为虚构样例。'}],
+    accounts: [
+      {id:'demo-account-douyin',platform:'douyin',account_name:'演示抖音账号',status:'demo_connected',followers:12800},
+      {id:'demo-account-xhs',platform:'xiaohongshu',account_name:'演示小红书账号',status:'demo_connected',followers:8600}
+    ],
+    radar: [], radarPrefs: { watched_categories:['伤感','情感'], production_mode:'market' }
+  }
+  data = fixture
+  $('#auth').classList.add('hidden')
+  $('#logout').classList.add('hidden')
+  $('#userbox').innerHTML = '<b>演示创作者</b><small>只读演示 · 不连接真实平台</small>'
+  const banner = document.getElementById('demoBanner')
+  if (!banner) {
+    const notice = document.createElement('div')
+    notice.id = 'demoBanner'
+    notice.className = 'notice'
+    notice.textContent = '演示模式：当前为虚构样例数据。保存、上传、AI 调用、账号授权和真实发布均不会执行。'
+    $('#view').before(notice)
+  }
+  render()
+}
+
 async function load() {
+  if (demoMode) return loadDemo()
   if (!user) return
   const results = await Promise.all([
     supabase.from('hot_topics').select('*').order('ai_score', { ascending: false }).limit(20),
@@ -166,6 +202,16 @@ async function load() {
   data = {
     hot: results[0].data || [], content: results[1].data || [], tasks: results[2].data || [], logs: results[3].data || [], accounts: results[4].data || [],
     radar: results[5].data || [], radarPrefs: results[6].data || { watched_categories: ['伤感','情感'], production_mode: 'market' }
+  }
+  data.jobs = []
+  try {
+    const response = await apiFetch('/api/publish/jobs?limit=50')
+    if (response.ok) {
+      const payload = await response.json()
+      data.jobs = Array.isArray(payload.jobs) ? payload.jobs : []
+    }
+  } catch (error) {
+    console.warn('无法读取发布队列历史：', error.message)
   }
   render()
 }
@@ -238,32 +284,89 @@ function render() {
     $('#viewLibrary').addEventListener('click', () => { active='library'; render() })
     $('#viewHot').addEventListener('click', () => { active='hot'; render() })
     $('#viewTasks').addEventListener('click', () => { active='tasks'; render() })
+  } else if (active === 'studio') {
+    renderStudio(view)
+  } else if (active === 'ai') {
+    renderAIStudio(view)
+  } else if (active === 'materials') {
+    renderMaterials(view)
+  } else if (active === 'posts') {
+    view.innerHTML = card('发帖记录', `<div class="filter-row"><span>已保存的帖子与内容记录</span><div class="filter-row"><button id="postsRefresh" class="secondary">刷新发布记录</button><button id="postsCreate">＋ 新建内容</button></div></div>` + (data.content.map((x) => `<div class="post-record"><div class="post-platform">${esc((x.platform || '内容').slice(0,1).toUpperCase())}</div><div class="post-record-main"><b>${esc(x.title || '未命名内容')}</b><small>${esc(x.platform || '未指定平台')} · ${esc(x.status || '草稿')} · ${x.created_at ? new Date(x.created_at).toLocaleString() : '时间未记录'}</small></div><span class="status-chip">${esc(x.status || '草稿')}</span><button class="secondary" data-post-edit="${esc(x.id)}">编辑</button><button class="secondary" data-post-queue="${esc(x.id)}">加入发布队列</button></div>`).join('') || empty('暂无发帖记录。先去创作者台创建内容。')));
+    $('#postsCreate').addEventListener('click', () => { editingContentId=null; active='create'; render() })
+    $('#postsRefresh').addEventListener('click', async () => {
+      if (demoMode) return alert('当前是只读演示模式，没有真实发布记录可刷新。')
+      const button=$('#postsRefresh')
+      button.disabled=true
+      button.textContent='刷新中…'
+      try {
+        const response=await apiFetch('/api/publish/jobs?limit=50')
+        const payload=await response.json()
+        if(!response.ok) throw new Error(payload.error || '刷新发布记录失败')
+        data.jobs=Array.isArray(payload.jobs)?payload.jobs:[]
+        render()
+      } catch(error) {
+        alert(error.message || '刷新发布记录失败')
+        button.disabled=false
+        button.textContent='刷新发布记录'
+      }
+    })
+    document.querySelectorAll('[data-post-edit]').forEach(button=>button.addEventListener('click',()=>openContentEditor(button.dataset.postEdit)))
+    document.querySelectorAll('[data-post-queue]').forEach(button=>button.addEventListener('click',()=>queuePublish(button.dataset.postQueue)))
+    const jobStatus = { queued:'排队中', publishing:'发布中', published:'已发布', failed:'发布失败', cancelled:'已取消', needs_review:'需要人工核对' }
+    const jobRows = (data.jobs || []).map(job => {
+      const content = data.content.find(item => String(item.id) === String(job.content_id))
+      const label = jobStatus[job.status] || job.status || '未知状态'
+      const schedule = job.scheduled_at ? new Date(job.scheduled_at).toLocaleString() : '立即发布队列'
+      const detail = (job.error_message ? '<small class="publish-job-error">' + esc(job.error_message) + '</small>' : '') + (job.status === 'needs_review' ? '<small class="publish-job-error">请先核对平台作品记录，不要直接重试，以免重复发布。</small>' : '')
+      const publishedAt = job.published_at ? ' · ' + new Date(job.published_at).toLocaleString() : ''
+      return '<div class="post-record"><div class="post-record-main"><b>' + esc(content?.title || '内容记录已不可用') + '</b><small>' + esc(job.platform || '未指定平台') + ' · ' + esc(schedule) + publishedAt + '</small>' + detail + '</div><span class="status-chip">' + esc(label) + '</span></div>'
+    }).join('')
+    view.innerHTML += card('发布队列记录', jobRows || empty('暂无发布队列记录。加入发布队列后，执行结果会显示在这里。'))
+  } else if (active === 'effects') {
+    const published = data.content.filter(x => ['published','posted','success','completed'].includes(String(x.status || '').toLowerCase())).length
+    const drafts = data.content.filter(x => ['draft','ready','generated'].includes(String(x.status || '').toLowerCase())).length
+    view.innerHTML = `<div class="page-intro"><span class="eyebrow dark-eyebrow">PERFORMANCE</span><h1>效果分析</h1><p>汇总当前 MediaBot 已保存的数据。未接入平台统计 API 的指标不会编造。</p></div><div class="stats"><div class="stat"><span>内容总数</span><b>${data.content.length}</b><small>已保存内容</small></div><div class="stat"><span>已发布状态</span><b>${published}</b><small>以记录状态统计</small></div><div class="stat"><span>待完善内容</span><b>${drafts}</b><small>草稿与待处理</small></div><div class="stat"><span>已连接账号</span><b>${data.accounts.filter(x=>x.status==='connected').length}</b><small>平台授权状态</small></div></div>` + card('内容表现明细', data.content.map(x=>`<div class="post-record"><div class="post-record-main"><b>${esc(x.title || '未命名内容')}</b><small>${esc(x.platform || '未指定平台')} · ${esc(x.status || '草稿')}</small></div><strong>${x.ai_score ?? '—'}</strong></div>`).join('') || empty('还没有可分析的内容记录。'))
+  } else if (active === 'leaderboard') {
+    view.innerHTML = `<div class="page-intro"><span class="eyebrow dark-eyebrow">RANKING</span><h1>排行榜</h1><p>基于当前已保存的热点评分排序，不冒充平台实时榜单。</p></div>` + card('热点内容排行', data.hot.slice().sort((a,b)=>Number(b.ai_score||0)-Number(a.ai_score||0)).map((x,i)=>`<div class="post-record"><div class="rank-number">${String(i+1).padStart(2,'0')}</div><div class="post-record-main"><b>${esc(x.title || '未命名热点')}</b><small>${esc(x.source || '来源未记录')}</small></div><strong>${x.ai_score ?? '—'}</strong></div>`).join('') || empty('暂无热点评分。可先前往爆款雷达录入样本。'))
+  } else if (active === 'templates') {
+    const templates = [{title:'小红书种草笔记',platform:'小红书',body:'标题：一个让我反复回购的好物\\n开头：先说使用前遇到的问题\\n正文：真实体验、三个亮点、适合人群\\n结尾：邀请读者分享体验'},{title:'抖音口播脚本',platform:'抖音',body:'开头3秒：提出痛点或反差\\n中段：给出三个具体信息点\\n结尾：总结并引导互动'},{title:'知识科普内容',platform:'全平台',body:'提出常见误区\\n用简单例子解释原理\\n给出可执行的三步建议'}]
+    view.innerHTML = `<div class="page-intro"><span class="eyebrow dark-eyebrow">TEMPLATES</span><h1>模板中心</h1><p>选择模板后可复制到 AI 写文案页面继续编辑。</p></div><div class="template-grid">${templates.map((t,i)=>`<article class="template-card"><span class="template-tag">${esc(t.platform)}</span><h3>${esc(t.title)}</h3><p>${esc(t.body).replace(/\\n/g,'<br>')}</p><button data-template="${i}">使用模板 ↗</button></article>`).join('')}</div>`
+    document.querySelectorAll('[data-template]').forEach(b=>b.addEventListener('click',()=>{ active='create'; render(); const body=$('#body'); if(body) body.value=templates[Number(b.dataset.template)].body; const title=$('#ctitle'); if(title) title.value=templates[Number(b.dataset.template)].title }))
+  } else if (active === 'me') {
+    view.innerHTML = `<div class="page-intro"><span class="eyebrow dark-eyebrow">ACCOUNT</span><h1>个人中心</h1><p>管理当前登录身份与平台接入状态。</p></div>` + card('账号信息', `<div class="profile-row"><span>登录邮箱</span><b>${esc(user?.email || '未登录')}</b></div><div class="profile-row"><span>用户 ID</span><code>${esc(user?.id || '—')}</code></div><div class="profile-row"><span>身份验证</span><b>Supabase Auth</b></div><div class="profile-row"><span>已连接平台</span><b>${data.accounts.filter(x=>x.status==='connected').length}</b></div><button id="profileLogout" class="secondary">退出登录</button>`)
+    $('#profileLogout').addEventListener('click',()=>{ if (demoMode) { demoMode=false; user=null; $('#demoBanner')?.remove(); $('#auth').classList.remove('hidden'); $('#userbox').innerHTML=''; render(); return } supabase.auth.signOut() })
   } else if (active === 'hot') {
     renderRadar(view)
   } else if (active === 'create') {
-    view.innerHTML = card('AI 自动写文案', `
+    const editingContent = editingContentId ? data.content.find(x => String(x.id) === String(editingContentId)) : null
+    view.innerHTML = card(editingContent ? '编辑已保存内容' : 'AI 自动写文案', `
       <form id="contentForm" class="form">
-        <input id="ctitle" placeholder="输入热点 / 主题，例如：AI 电商新玩法" required>
-        <select id="platform"><option value="all">全平台</option><option value="xiaohongshu">小红书</option><option value="douyin">抖音</option></select>
+        <input id="ctitle" placeholder="输入热点 / 主题，例如：AI 电商新玩法" value="${esc(editingContent?.title || '')}" required>
+        <select id="platform"><option value="all" ${editingContent?.platform==='all'?'selected':''}>全平台</option><option value="xiaohongshu" ${editingContent?.platform==='xiaohongshu'?'selected':''}>小红书</option><option value="douyin" ${editingContent?.platform==='douyin'?'selected':''}>抖音</option></select>
         <select id="tone"><option>专业但有网感</option><option>轻松口语化</option><option>观点犀利</option><option>干货教程</option></select>
         <select id="length"><option>中等</option><option>短</option><option>长</option></select>
-        <textarea id="body" placeholder="补充你的写作要求（可选）"></textarea>
+        <textarea id="body" placeholder="补充你的写作要求（可选）">${esc(editingContent?.body || '')}</textarea>
         <label>抖音视频素材（发布抖音时必填）<input id="mediaFile" type="file" accept="video/mp4,video/webm"></label>
-        <button id="generateBtn" type="submit">✨ AI 真正生成</button>
+        <button id="generateBtn" type="submit">${editingContent ? '保存修改' : '✨ AI 真正生成'}</button>
         <div id="aiResult"></div>
       </form>`)
   } else if (active === 'remix') {
     renderRemixLab(view)
   } else if (active === 'library') {
-    view.innerHTML = card('内容库', data.content.map((x) => `<div class="row"><div><b>${esc(x.title)}</b><small>${esc(x.platform)} · ${esc(x.status)} · 素材 ${Array.isArray(x.media_urls) && x.media_urls.length ? '已上传' : '无'}</small></div><div class="mini-actions"><strong>${x.ai_score ?? '-'}</strong><button data-queue-publish="${x.id}">加入发布队列</button></div></div>`).join('') || empty('暂无内容'))
+    view.innerHTML = card('内容库', data.content.map((x) => `<div class="row"><div><b>${esc(x.title)}</b><small>${esc(x.platform)} · ${esc(x.status)} · 素材 ${Array.isArray(x.media_urls) && x.media_urls.length ? '已上传' : '无'}</small></div><div class="mini-actions"><strong>${x.ai_score ?? '-'}</strong><button class="secondary" data-library-edit="${esc(x.id)}">编辑</button><button data-queue-publish="${esc(x.id)}">加入发布队列</button></div></div>`).join('') || empty('暂无内容')); document.querySelectorAll('[data-library-edit]').forEach(button=>button.addEventListener('click',()=>openContentEditor(button.dataset.libraryEdit)))
     document.querySelectorAll('[data-queue-publish]').forEach((button) => button.addEventListener('click', () => queuePublish(button.dataset.queuePublish)))
   } else if (active === 'schedule') {
-    view.innerHTML = card('发布计划', data.content.filter((x) => x.scheduled_at).map((x) => `<div class="row"><div><b>${esc(x.title)}</b><small>${new Date(x.scheduled_at).toLocaleString()}</small></div><span>${esc(x.status)}</span></div>`).join('') || empty('暂无排期'))
+    const scheduled = data.content.filter(x => x.scheduled_at).sort((a,b) => new Date(a.scheduled_at)-new Date(b.scheduled_at))
+    const available = data.content.filter(x => !x.scheduled_at)
+    view.innerHTML = `<div class="page-intro"><span class="eyebrow dark-eyebrow">PUBLISH PLANNER</span><h1>发布计划</h1><p>安排已保存内容的发布时间。保存计划不代表平台已经自动发布，自动发布还需要平台授权与后台任务支持。</p></div><div class="card"><h3>安排新计划</h3><form id="scheduleForm" class="form"><label>选择内容<select id="scheduleContent" required>${available.map(x => `<option value="${esc(x.id)}">${esc(x.title || '未命名内容')}</option>`).join('')}</select></label><label>发布时间<input id="scheduleTime" type="datetime-local" required></label><button type="submit" ${available.length ? '' : 'disabled'}>保存计划</button><div id="scheduleMsg" role="status"></div></form>${available.length ? '' : '<p class="muted">没有未排期内容，请先创建内容。</p>'}</div><div class="section-heading"><div><span class="eyebrow dark-eyebrow">UPCOMING</span><h2>已安排内容</h2></div></div><div class="card">${scheduled.map(x => `<div class="post-record"><div class="post-record-main"><b>${esc(x.title || '未命名内容')}</b><small>${new Date(x.scheduled_at).toLocaleString()} · ${esc(x.status || '草稿')}</small></div><button class="secondary" data-unschedule="${esc(x.id)}">取消排期</button></div>`).join('') || empty('暂无发布计划。')}</div>`
+    $('#scheduleForm')?.addEventListener('submit', async e => { e.preventDefault(); if (demoMode) { $('#scheduleMsg').textContent='演示模式为只读状态，排期不会保存。'; return } const id=$('#scheduleContent').value, when=$('#scheduleTime').value, msg=$('#scheduleMsg'); const time=new Date(when); if(!id || !when || Number.isNaN(time.getTime()) || time.getTime()<=Date.now()){msg.textContent='请选择有效的未来时间。';return} const btn=e.submitter; btn.disabled=true; msg.textContent='正在保存…'; try { const {error}=await supabase.from('content_items').update({scheduled_at:time.toISOString()}).eq('id',id).eq('user_id',user.id); if(error) throw error; await load() } catch(err) { msg.textContent='保存失败：'+err.message } finally { btn.disabled=false } })
+    document.querySelectorAll('[data-unschedule]').forEach(button => button.addEventListener('click', async () => { if (demoMode) return alert('演示模式为只读状态，排期不会更改。'); if(!confirm('确定取消排期？内容不会被删除。')) return; button.disabled=true; try { const {error}=await supabase.from('content_items').update({scheduled_at:null}).eq('id',button.dataset.unschedule).eq('user_id',user.id); if(error) throw error; await load() } catch(err) { alert('取消失败：'+err.message); button.disabled=false } }))
   } else if (active === 'accounts') {
     view.innerHTML = card('账号接入', `<div class="accounts">${['xiaohongshu', 'douyin'].map((platform) => {
       const account=data.accounts.find(x=>x.platform===platform && x.status==='connected')
+      const demoAccount=data.accounts.find(x=>x.platform===platform && x.status==='demo_connected')
       const name=platform==='douyin'?'抖音':'小红书'
-      return `<div class="account"><b>${name}</b><span>${account ? `已连接：${esc(account.account_name || '')}` : '未连接'}</span>${platform==='douyin' ? `<button data-oauth="douyin">🔐 授权连接</button>` : `<button data-oauth="xiaohongshu">查看接入配置</button>`}</div>`
+      return `<div class="account"><b>${name}</b><span>${account ? `已连接：${esc(account.account_name || '')}` : demoAccount ? `演示账号：${esc(demoAccount.account_name || '')}（未授权）` : '未连接'}</span>${platform==='douyin' ? `<button data-oauth="douyin">🔐 授权连接</button>` : `<button data-oauth="xiaohongshu">查看接入配置</button>`}</div>`
     }).join('')}</div><p class="muted">抖音走官方 OAuth + 官方视频发布接口；小红书本版本不伪造“模拟发布”，等你提供已审核的官方开放平台应用参数后启用真实适配器。</p>`)
     document.querySelectorAll('[data-oauth]').forEach((button) => button.addEventListener('click', () => startOAuth(button.dataset.oauth)))
   } else if (active === 'tasks') {
@@ -278,6 +381,106 @@ function render() {
 
   document.querySelectorAll('[data-workflow]').forEach((button) => button.addEventListener('click', () => { active = button.dataset.workflow; render() }))
   bindForms()
+}
+
+
+function renderStudio(view) {
+  view.innerHTML = `
+    <div class="page-intro"><span class="eyebrow dark-eyebrow">CREATOR STUDIO</span><h1>创作者台</h1><p>从选题、文案到素材和发布，集中完成每一步创作。</p></div>
+    <div class="studio-hero"><div><span class="studio-kicker">TODAY'S WORKSPACE</span><h2>今天准备创作什么？</h2><p>先选方向，再完成内容，最后安排发布。</p><div class="studio-actions"><button id="studioStartAI">✦ AI 生成文案</button><button id="studioBrowseHot" class="secondary">查看热门选题</button></div></div><div class="studio-symbol">✳</div></div>
+    <div class="studio-step-grid">
+      <button class="studio-step" data-studio-go="hot"><span>01 · 选题</span><b>发现热门方向</b><small>查看已收集热点与样本趋势</small><i>↗</i></button>
+      <button class="studio-step" data-studio-go="ai"><span>02 · 创作</span><b>生成标题和正文</b><small>按平台和语气制作内容</small><i>↗</i></button>
+      <button class="studio-step" data-studio-go="materials"><span>03 · 素材</span><b>管理创作素材</b><small>查看上传的视频、图片与音频</small><i>↗</i></button>
+      <button class="studio-step" data-studio-go="schedule"><span>04 · 发布</span><b>安排发布计划</b><small>将内容加入发布队列</small><i>↗</i></button>
+    </div>
+    <div class="section-heading"><div><span class="eyebrow dark-eyebrow">RECENT CONTENT</span><h2>最近创作</h2></div><button class="text-button" id="studioAllPosts">查看全部 ↗</button></div>
+    <div class="card studio-recent">${data.content.slice(0,6).map(x=>`<div class="post-record"><div class="post-platform">${esc((x.platform||'文').slice(0,1).toUpperCase())}</div><div class="post-record-main"><b>${esc(x.title||'未命名内容')}</b><small>${esc(x.platform||'未指定平台')} · ${esc(x.status||'草稿')} · ${x.created_at?new Date(x.created_at).toLocaleString():'时间未记录'}</small></div><button class="secondary" data-studio-edit="${esc(x.id)}">继续处理</button></div>`).join('')||empty('还没有内容，先创建第一条文案。')}</div>`
+  $('#studioStartAI').addEventListener('click',()=>{active='ai';render()})
+  $('#studioBrowseHot').addEventListener('click',()=>{active='hot';render()})
+  $('#studioAllPosts').addEventListener('click',()=>{active='posts';render()})
+  document.querySelectorAll('[data-studio-go]').forEach(b=>b.addEventListener('click',()=>{active=b.dataset.studioGo;render()}))
+  document.querySelectorAll('[data-studio-edit]').forEach(b=>b.addEventListener('click',()=>{active='posts';render()}))
+}
+
+function renderAIStudio(view) {
+  view.innerHTML = `
+    <div class="page-intro"><span class="eyebrow dark-eyebrow">AI CREATION</span><h1>AI 助手</h1><p>生成原创内容草稿，保存后可继续编辑、安排发布。需要配置可用的 AI 服务密钥。</p></div>
+    <div class="ai-studio-layout"><div class="card"><div class="ai-title"><span class="ai-avatar">✦</span><div><h3>内容创作助手</h3><small>根据主题生成社交媒体内容</small></div></div><form id="aiStudioForm" class="form">
+      <label>创作主题<input id="aiStudioTopic" placeholder="例如：新手如何挑选适合自己的相机" required></label>
+      <div class="studio-form-row"><label>发布平台<select id="aiStudioPlatform"><option value="all">通用</option><option value="xiaohongshu">小红书</option><option value="douyin">抖音</option></select></label><label>内容类型<select id="aiStudioType"><option>实用教程</option><option>种草分享</option><option>口播脚本</option><option>热点评论</option><option>故事分享</option></select></label></div>
+      <div class="studio-form-row"><label>表达风格<select id="aiStudioTone"><option>自然、有网感</option><option>专业可信</option><option>轻松幽默</option><option>观点鲜明</option></select></label><label>篇幅<select id="aiStudioLength"><option>中等</option><option>简短</option><option>详细</option></select></label></div>
+      <label>补充要求<textarea id="aiStudioNotes" rows="4" placeholder="受众、重点、需要避开的内容……"></textarea></label>
+      <button type="submit" id="aiStudioSubmit">生成内容草稿</button><div id="aiStudioMsg" role="status"></div>
+    </form></div><div class="card ai-side-card"><h3>创作小建议</h3><div class="ai-tip"><b>先明确目标</b><p>说明内容要解决的问题，以及希望读者看完后做什么。</p></div><div class="ai-tip"><b>加入真实细节</b><p>补充自己的经历、产品信息或实际素材，避免空泛表达。</p></div><div class="ai-tip"><b>发布前检查</b><p>确认事实、版权、平台规范和素材授权。</p></div><button id="aiStudioTemplates" class="secondary">浏览创作模板</button></div></div>`
+  $('#aiStudioTemplates').addEventListener('click',()=>{active='templates';render()})
+  $('#aiStudioForm').addEventListener('submit',e=>{
+    e.preventDefault()
+    const topic=$('#aiStudioTopic').value.trim()
+    const platform=$('#aiStudioPlatform').value
+    const type=$('#aiStudioType').value
+    const tone=$('#aiStudioTone').value
+    const length=$('#aiStudioLength').value
+    const notes=$('#aiStudioNotes').value.trim()
+    active='create';render()
+    if($('#ctitle')) $('#ctitle').value=topic
+    if($('#platform')) $('#platform').value=platform
+    if($('#tone')) $('#tone').value=tone
+    if($('#length')) $('#length').value=length
+    if($('#body')) $('#body').value=[type,notes].filter(Boolean).join('。')
+    const result=$('#aiResult')
+    if(result) result.textContent='主题和创作要求已带入 AI 写文案页面。点击“AI 真正生成”开始生成。'
+  })
+}
+
+async function renderMaterials(view) {
+  view.innerHTML = `
+    <div class="page-intro"><span class="eyebrow dark-eyebrow">ASSET LIBRARY</span><h1>素材库</h1><p>集中管理你上传的创作素材。文件保存在当前账号对应的存储空间中。</p></div>
+    <div class="card"><h3>上传新素材</h3><p class="muted">支持图片、视频和音频。单个文件最大 1GB；请只上传自己拥有或获授权使用的内容。</p><form id="materialsUploadForm" class="materials-upload"><input id="materialsFiles" type="file" accept="image/*,video/*,audio/*" multiple required><button id="materialsUploadBtn" type="submit">上传所选素材</button><span id="materialsUploadMsg" role="status"></span></form></div>
+    <div class="section-heading"><div><span class="eyebrow dark-eyebrow">YOUR ASSETS</span><h2>已上传素材</h2></div><button id="materialsRefresh" class="secondary">刷新</button></div>
+    <div id="materialsGrid" class="materials-grid"><div class="empty">正在读取素材库…</div></div>`
+  $('#materialsRefresh').addEventListener('click',()=>loadMaterialsList())
+  $('#materialsUploadForm').addEventListener('submit',uploadMaterials)
+  await loadMaterialsList()
+}
+
+async function loadMaterialsList() {
+  const grid=$('#materialsGrid'); if(!grid)return
+  grid.innerHTML=empty('正在读取素材库…')
+  try{
+    const response=await apiFetch('/api/video/assets')
+    const payload=await response.json()
+    if(!response.ok)throw new Error(payload.error||'读取素材失败')
+    const assets=payload.data||[]
+    if(!assets.length){grid.innerHTML=empty('素材库还是空的。上传视频、图片或音频后会显示在这里。');return}
+    grid.innerHTML=assets.map(a=>{
+      const kind=String(a.mime_type||'').startsWith('video/')?'视频':String(a.mime_type||'').startsWith('image/')?'图片':String(a.mime_type||'').startsWith('audio/')?'音频':'文件'
+      return `<article class="material-card"><div class="material-preview">${kind==='图片'?'<span>▧</span>':kind==='视频'?'<span>▶</span>':kind==='音频'?'<span>♫</span>':'<span>▤</span>'}</div><div class="material-info"><b title="${esc(a.file_name)}">${esc(a.file_name||'未命名素材')}</b><small>${kind} · ${(Number(a.size_bytes||0)/1024/1024).toFixed(1)} MB</small><small>${a.created_at?new Date(a.created_at).toLocaleString():'时间未记录'}</small></div></article>`
+    }).join('')
+  }catch(e){grid.innerHTML=`<div class="notice">暂时无法读取素材列表：${esc(e.message)}。请确认服务端素材接口和 publish-media 存储桶已配置。</div>`}
+}
+
+async function uploadMaterials(event) {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
+  event.preventDefault()
+  const files=[...($('#materialsFiles').files||[])],msg=$('#materialsUploadMsg'),btn=$('#materialsUploadBtn')
+  if(!files.length)return
+  if(files.some(f=>f.size>1024*1024*1024)){msg.textContent='单个文件不能超过 1GB';return}
+  btn.disabled=true;msg.textContent='正在上传…'
+  try{
+    for(const file of files){
+      const folder=file.type.startsWith('video/')?'videos':file.type.startsWith('audio/')?'music':'references'
+      const safeName=file.name.replace(/[^a-zA-Z0-9._-]/g,'_').slice(-120)
+      const storagePath=user.id+'/'+folder+'/'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'-'+safeName
+      const {error}=await supabase.storage.from('publish-media').upload(storagePath,file,{upsert:false,contentType:file.type})
+      if(error)throw error
+      const response=await apiFetch('/api/video/assets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({storagePath,fileName:file.name,mimeType:file.type,sizeBytes:file.size})})
+      const payload=await response.json()
+      if(!response.ok)throw new Error(payload.error||'素材登记失败')
+    }
+    $('#materialsFiles').value='';msg.textContent='上传完成。';await loadMaterialsList()
+  }catch(e){msg.textContent='上传失败：'+e.message}
+  finally{btn.disabled=false}
 }
 
 
@@ -356,6 +559,7 @@ async function renderRemixLab(view) {
 }
 
 async function uploadRemixFiles({ quiet = false } = {}) {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   const button=$('#uploadRemixFiles'),msg=$('#remixUploadMsg')
   const uploaded={videoIds:[],referenceVideoId:'',imageId:'',musicId:''}
   const videoFiles=[...($('#remixVideoFiles').files||[])], referenceVideoFile=$('#remixReferenceVideo')?.files?.[0], imageFile=$('#remixReferenceImage').files?.[0], musicFile=$('#remixMusicFile').files?.[0]
@@ -409,6 +613,7 @@ async function refreshRemixAssets() {
 }
 
 async function startRemixJob(event) {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   event.preventDefault()
   const button=$('#startRemixBtn'),status=$('#remixJobStatus')
   button.disabled=true;button.textContent='上传素材并开始分析…';status.textContent='正在准备素材，然后自动分析画面、规划剪辑并生成成片。'
@@ -464,6 +669,7 @@ async function refreshRecentRemixes() {
 }
 
 async function saveRadarPreferences() {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   try {
     const watchedCategories=[...document.querySelectorAll('[data-watch-category]:checked')].map(x=>x.dataset.watchCategory)
     const {error}=await supabase.from('radar_preferences').upsert({user_id:user.id,watched_categories:watchedCategories,production_mode:$('#radarMode').value,updated_at:new Date().toISOString()},{onConflict:'user_id'})
@@ -473,6 +679,7 @@ async function saveRadarPreferences() {
 }
 
 async function saveRadarSnapshot(event) {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   event.preventDefault()
   const button=$('#saveRadarVideo'),msg=$('#radarFormMsg'),val=id=>$('#'+id)?.value??''
   button.disabled=true;button.textContent='保存中…';msg.textContent=''
@@ -488,6 +695,8 @@ async function saveRadarSnapshot(event) {
   finally { button.disabled=false;button.textContent='保存本次快照' }
 }
 
+function openContentEditor(id) { if (demoMode) return alert('演示模式为只读状态，不能编辑样例内容。'); const item=data.content.find(x=>String(x.id)===String(id)); if(!item) return alert('找不到这条内容，请刷新后重试。'); editingContentId=item.id; active='create'; render() }
+
 function bindForms() {
   const form = $('#contentForm')
   if (!form) return
@@ -495,6 +704,11 @@ function bindForms() {
     event.preventDefault()
     const button = $('#generateBtn')
     const result = $('#aiResult')
+    if (editingContentId) {
+      if (demoMode) { result.innerHTML='<div class="error">演示模式为只读状态，无法保存修改。</div>'; return }
+      button.disabled=true; button.textContent='正在保存…'
+      try { const {error}=await supabase.from('content_items').update({title:$('#ctitle').value.trim(),body:$('#body').value,platform:$('#platform').value}).eq('id',editingContentId).eq('user_id',user.id); if(error) throw error; editingContentId=null; alert('内容修改已保存'); await load(); active='library'; render() } catch(error) { result.innerHTML=`<div class="error">${esc(error.message)}</div>` } finally { button.disabled=false; button.textContent='保存修改' }; return
+    }
     button.disabled = true
     button.textContent = 'AI 正在生成…'
     result.innerHTML = ''
@@ -513,8 +727,10 @@ function bindForms() {
       })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'AI 生成失败')
-      result.innerHTML = `<div class="ai-preview"><b>生成成功：${esc(payload.result.title || $('#ctitle').value)}</b><div class="score">${payload.result.ai_score ?? '-'} 分</div><p>${esc($('#platform').value === 'douyin' ? payload.result.douyin : payload.result.xiaohongshu)}</p><small>${(payload.result.hashtags || []).map((tag) => `#${esc(tag)}`).join(' ')}</small></div>`
+      result.innerHTML = `<div class="ai-preview"><b>生成并保存成功：${esc(payload.result.title || $('#ctitle').value)}</b><div class="score">${payload.result.ai_score ?? '-'} 分</div><p>${esc($('#platform').value === 'douyin' ? payload.result.douyin : payload.result.xiaohongshu)}</p><small>${(payload.result.hashtags || []).map((tag) => `#${esc(tag)}`).join(' ')}</small><p>内容已保存到内容库，可继续修改后再安排发布。</p><button type="button" id="editGeneratedContent" class="secondary">继续编辑这条内容</button><button type="button" id="openGeneratedLibrary" class="secondary">查看内容库</button></div>`
       await load()
+      $('#editGeneratedContent')?.addEventListener('click',()=>openContentEditor(payload.content.id))
+      $('#openGeneratedLibrary')?.addEventListener('click',()=>{active='library';render()})
     } catch (error) {
       result.innerHTML = `<div class="error">${esc(error.message)}</div>`
     } finally {
@@ -525,6 +741,7 @@ function bindForms() {
 }
 
 async function uploadMediaIfAny() {
+  if (demoMode) throw new Error('演示模式为只读状态，请登录真实账号后再执行此操作。')
   const file=$('#mediaFile')?.files?.[0]
   if(!file) return []
   if(!user) throw new Error('请先登录')
@@ -536,12 +753,15 @@ async function uploadMediaIfAny() {
 }
 
 async function fetchRealHot(){
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   try{ const r=await apiFetch('/api/hot-topics/fetch-now',{method:'POST'}); const p=await r.json(); if(!r.ok) throw new Error(p.error||'抓取失败'); alert(`真实热点抓取 ${p.result?.fetched??0} 条，新增 ${p.result?.inserted??0} 条，AI 已评分 ${p.scored?.scored??0} 条`); await load() }catch(e){alert(e.message)}
 }
 async function scoreHot(){
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   try{ const r=await apiFetch('/api/hot-topics/fetch-now',{method:'POST'}); const p=await r.json(); if(!r.ok) throw new Error(p.error||'评分失败'); alert(`已处理热点：新增 ${p.result?.inserted??0}，AI 评分 ${p.scored?.scored??0}`); await load() }catch(e){alert(e.message)}
 }
 async function startOAuth(platform){
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   if(platform==='xiaohongshu') return alert('小红书真实发布需要官方开放平台应用审核通过后的 Client ID/Secret 与发布权限。v7 已预留安全适配器。')
   try{ const r=await apiFetch('/api/oauth/douyin/start',{method:'POST'}); const p=await r.json(); if(!r.ok) throw new Error(p.error||'OAuth 启动失败'); window.location.href=p.url }catch(e){alert(e.message)}
 }
@@ -552,6 +772,7 @@ function goCreate() {
 }
 
 async function addDemoHot() {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   try {
     const response = await apiFetch('/api/hot-topics/demo-score', { method: 'POST' })
     const payload = await response.json()
@@ -563,6 +784,7 @@ async function addDemoHot() {
 }
 
 async function runAutomationNow() {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   try {
     const response = await apiFetch('/api/automation/run-now', { method: 'POST' })
     const payload = await response.json()
@@ -575,6 +797,7 @@ async function runAutomationNow() {
 }
 
 async function seedAutomationTasks() {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   try {
     const rows = [
       { user_id: user.id, name: '自动抓取热点', task_type: 'hot_fetch', cron_expression: '0 * * * *', next_run_at: new Date().toISOString(), enabled: true, config: {} },
@@ -592,6 +815,7 @@ async function seedAutomationTasks() {
 }
 
 async function queuePublish(contentId){
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
   const accounts=data.accounts.filter(x=>x.status==='connected')
   if(!accounts.length) return alert('请先连接抖音/小红书账号')
   const labels=accounts.map((a,i)=>`${i+1}. ${a.platform==='douyin'?'抖音':'小红书'} - ${a.account_name||''}`).join('\n')
@@ -600,19 +824,23 @@ async function queuePublish(contentId){
   const when=prompt('定时发布时间（可留空，立即进入队列）：\n例如 2026-10-19 20:00')
   let scheduledAt=null
   if(when?.trim()){ const d=new Date(when.replace(' ','T')); if(Number.isNaN(d.getTime())) return alert('时间格式无效'); scheduledAt=d.toISOString() }
-  try{ const r=await apiFetch('/api/publish/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contentId,socialAccountId:accounts[pick].id,scheduledAt})}); const p=await r.json(); if(!r.ok) throw new Error(p.error||'加入队列失败'); alert('已加入真实发布队列'); await load() }catch(e){alert(e.message)}
+  try{ const r=await apiFetch('/api/publish/queue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({contentId,socialAccountId:accounts[pick].id,scheduledAt})}); const p=await r.json(); if(!r.ok) throw new Error(p.error||'加入队列失败'); alert('已加入发布队列。注意：加入队列不等于已发布，最终结果以后台任务状态和平台返回结果为准。'); await load() }catch(e){alert(e.message)}
 }
 
 async function addAccount(platform) {
+  if (demoMode) return alert('演示模式为只读状态，请登录真实账号后再执行此操作。')
+  // A database row is not proof of platform authorization. Never mark an account
+  // connected unless the official OAuth callback has completed and tokens are stored.
   try {
     const { error } = await supabase.from('social_accounts').insert({
       user_id: user.id,
       platform,
-      account_name: platform === 'douyin' ? '示例抖音账号' : '示例小红书账号',
-      status: 'connected'
+      account_name: platform === 'douyin' ? '待授权抖音账号' : '待授权小红书账号',
+      status: 'pending'
     })
     if (error) throw error
     await load()
+    alert('已创建待授权记录。此操作不会连接平台或启用发布；请使用官方授权流程。')
   } catch (error) {
     alert(error.message)
   }
@@ -632,6 +860,7 @@ function generateFromTopHot() {
 }
 
 async function login() {
+  if (!hasSupabaseConfig) return setAuthMessage('尚未配置 Supabase。可先进入演示模式；真实登录需要填写 Supabase 配置。', 'error')
   const email = $('#email').value.trim()
   const password = $('#password').value
   setAuthMessage('登录中…')
@@ -640,6 +869,7 @@ async function login() {
 }
 
 async function signup() {
+  if (!hasSupabaseConfig) return setAuthMessage('尚未配置 Supabase。可先进入演示模式；真实注册需要填写 Supabase 配置。', 'error')
   const email = $('#email').value.trim()
   const password = $('#password').value
   if (password.length < 6) return setAuthMessage('密码至少需要 6 位。', 'error')
@@ -668,7 +898,8 @@ $('#authForm').addEventListener('submit', async (event) => {
   await login()
 })
 $('#signup').addEventListener('click', signup)
-$('#logout').addEventListener('click', () => supabase.auth.signOut())
+$('#demoLogin').addEventListener('click', () => { demoMode = true; user = { id: 'demo-user-0001', email: 'creator@example.test' }; active = 'dashboard'; loadDemo() })
+$('#logout').addEventListener('click', () => { if (demoMode) { demoMode = false; user = null; $('#demoBanner')?.remove(); $('#auth').classList.remove('hidden'); $('#userbox').innerHTML = ''; render(); return } supabase.auth.signOut() })
 
 supabase.auth.onAuthStateChange((_event, session) => {
   user = session?.user || null
