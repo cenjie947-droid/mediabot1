@@ -1,4 +1,4 @@
-export function normalizeText(value='') { return String(value).normalize('NFKC').toLowerCase().replace(/[\\s\\p{P}\\p{S}]+/gu,''); }
+export function normalizeText(value='') { return String(value).normalize('NFKC').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu,''); }
 export function classifyDemand({title='',content='',forum='',url=''}={}) {
  const text=[title,content,forum].join(' ');
  const rules=[['线下服务',/上门|到店|线下|面交|陪诊|搬家|维修|跑腿|现场安装/],['广告或风险内容',/广告|推广|加群|招代理|刷单|博彩|贷款|色情|代考/]];
@@ -19,7 +19,7 @@ export function isDuplicate(a,b) {
  return ak.length>=8&&ak===bk;
 }
 export function buildSearchQueries(d) {
- const title=String(d.title||'').trim(),content=String(d.content||'').trim(),forum=String(d.forum||'').trim(),excerpt=content.replace(/\\s+/g,' ').slice(0,90);
+ const title=String(d.title||'').trim(),content=String(d.content||'').trim(),forum=String(d.forum||'').trim(),excerpt=content.replace(/\s+/g,' ').slice(0,90);
  return [...new Set([title,[title,excerpt].filter(Boolean).join(' '),[forum,title].filter(Boolean).join(' ')].filter(x=>x.trim().length>1))];
 }
 export function buildContactDraft(d) { return '你好，看到你之前在'+(d.forum||'贴吧')+'发布了寻找需求「'+(d.title||'')+'」。想问一下你现在还需要吗？如果需要，我可以先把匹配线索和来源发给你核对，确认符合后再继续。'; }
