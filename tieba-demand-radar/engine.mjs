@@ -16,7 +16,7 @@ export function classifyDemand({title='',content='',forum='',url=''}={}) {
 export function isDuplicate(a,b) {
  if(a.url&&b.url&&a.url===b.url)return true;
  const ak=normalizeText([a.title,a.content].join(' ')).slice(0,100),bk=normalizeText([b.title,b.content].join(' ')).slice(0,100);
- return ak.length>=16&&ak===bk;
+ return ak.length>=8&&ak===bk;
 }
 export function buildSearchQueries(d) {
  const title=String(d.title||'').trim(),content=String(d.content||'').trim(),forum=String(d.forum||'').trim(),excerpt=content.replace(/\\s+/g,' ').slice(0,90);
