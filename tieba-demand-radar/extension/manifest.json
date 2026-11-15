@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "贴吧需求雷达采集助手",
+  "version": "1.0.0",
+  "description": "使用当前已登录的贴吧浏览器会话，扫描你选择的贴吧求助帖子并导出需求数据。",
+  "permissions": [
+    "tabs",
+    "scripting",
+    "storage",
+    "downloads"
+  ],
+  "host_permissions": [
+    "https://tieba.baidu.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "贴吧需求雷达"
+  },
+  "icons": {}
+}
