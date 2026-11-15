@@ -2,7 +2,9 @@ import {classifyDemand} from './engine.mjs';
 const API='https://qianfan.baidubce.com/v2/ai_search/web_search';
 function normalizeQuery(input){
  const q=String(input||'').trim();
- return q.replace(/^site:tieba\\.baidu\\.com\\/(?:p\\/)?\\s*/i,'').trim();
+ const lower=q.toLowerCase();
+ for(const prefix of ['site:tieba.baidu.com/p ','site:tieba.baidu.com/ '])if(lower.startsWith(prefix))return q.slice(prefix.length).trim();
+ return q;
 }
 export async function searchPublicPosts(queries,apiKey,fetchImpl=fetch){
  if(!apiKey)throw Object.assign(new Error('未配置百度千帆搜索 API Key。请在 Render 服务环境变量中设置 BAIDU_QIANFAN_API_KEY。'),{status:503,code:'SEARCH_KEY_MISSING'});
