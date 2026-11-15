@@ -4,7 +4,7 @@
 在你自己的 Chrome 浏览器中使用已登录的百度贴吧会话，按吧名和关键词搜索帖子，读取帖子标题和正文，筛选求助需求，并将新需求自动同步到云端需求雷达网页。不会读取、保存或上传百度密码、Cookie、验证码。
 
 ## 安装（只需一次）
-1. 下载本分支 ZIP：`https://github.com/cenj ie947-droid/mediabot1/archive/refs/heads/tieba-demand-radar-v1.zip`（请去掉链接中的空格；或直接从仓库下载）。
+1. 下载本分支 ZIP：`https://github.com/cenjie947-droid/mediabot1/archive/refs/heads/tieba-demand-radar-v1.zip`。
 2. 解压，在 Chrome 地址栏打开 `chrome://extensions`（扩展程序）。
 3. 打开右上角「开发者模式」。
 4. 点击「加载已解压的扩展程序」，选择解压后的 `tieba-demand-radar/extension` 文件夹。
