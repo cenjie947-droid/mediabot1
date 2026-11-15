@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>贴吧需求雷达采集助手</title>
+<style>
+body{font:14px system-ui,"PingFang SC",sans-serif;width:340px;margin:0;padding:14px;background:#101827;color:#edf4ff}h2{font-size:17px;margin:0 0 10px}p{color:#aebed2;line-height:1.5}label{display:block;margin:10px 0 5px;color:#aebed2}textarea{width:100%;box-sizing:border-box;background:#0b1220;color:white;border:1px solid #35465e;border-radius:8px;padding:8px}button{width:100%;padding:10px;border:0;border-radius:8px;background:#397ee4;color:white;margin-top:8px;font-weight:600}button.secondary{background:#25364d}button:disabled{opacity:.5}#status{padding:9px;background:#182a40;border-radius:8px;margin-top:10px;white-space:pre-wrap}
+</style>
+<h2>贴吧需求雷达采集助手</h2>
+<p>先在同一个 Chrome 浏览器登录百度贴吧。助手会在该浏览器会话中打开贴吧搜索页和帖子页，读取你账号正常可访问的内容。不会读取或上传密码、Cookie。</p>
+<label>贴吧名称（每行一个）</label><textarea id="forums" rows="2">找书吧
+找电影吧</textarea>
+<label>需求关键词（每行一个）</label><textarea id="keywords" rows="4">求书
+找书
+只记得剧情
+求电影
+找电影
+忘了片名</textarea>
+<button id="login" class="secondary">打开贴吧登录</button>
+<button id="scan">开始扫描已登录贴吧</button>
+<button id="export" class="secondary" disabled>导出需求数据 JSON</button>
+<div id="status">状态：等待操作</div>
+<script src="popup.js"></script>
+</html>
