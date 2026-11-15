@@ -13,7 +13,7 @@ export async function searchPublicPosts(queries,apiKey,fetchImpl=fetch){
  if(!clean.length)throw Object.assign(new Error('搜索词不能为空'),{status:400,code:'INVALID_QUERIES'});
  const all=[];
  for(const query of clean){
-  const response=await fetchImpl(API,{method:'POST',headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:query}],search_source:'baidu_search_v2',edition:'standard',resource_type_filter:[{type:'web',top_k:20}],search_filter:{match:{site:['tieba.baidu.com']}}}),signal:AbortSignal.timeout(20000)});
+  const response=await fetchImpl(API,{method:'POST',headers:{Authorization:'Bearer '+apiKey,'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:query}],search_source:'baidu_search_v2',edition:'standard',resource_type_filter:[{type:'web',top_k:20}],search_filter:{match:{site:['tieba.baidu.com']}},search_recency_filter:'month'}),signal:AbortSignal.timeout(20000)});
   if(!response.ok)throw Object.assign(new Error('百度搜索接口返回 '+response.status+'：'+(await response.text()).slice(0,300)),{status:502,code:'UPSTREAM_SEARCH_ERROR'});
   const payload=await response.json(),refs=Array.isArray(payload.references)?payload.references:[];
   for(const r of refs){
