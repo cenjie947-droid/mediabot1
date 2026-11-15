@@ -1,0 +1,17 @@
+name: Demand Radar tests
+on:
+  push:
+    branches:
+      - tieba-demand-radar-v1
+    paths:
+      - 'tieba-demand-radar/**'
+      - '.github/workflows/radar-tests.yml'
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test --prefix tieba-demand-radar
