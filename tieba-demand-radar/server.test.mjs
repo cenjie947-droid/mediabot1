@@ -8,9 +8,9 @@ test('HTTP health, analyze and public search endpoints',async(t)=>{
  await Promise.race([once(child.stdout,'data'),new Promise((_,reject)=>setTimeout(()=>reject(new Error('server start timeout')),5000))]);
  t.after(()=>{if(!child.killed)child.kill('SIGTERM')});
  const base='http://127.0.0.1:'+port;
- const health=await fetch(base+'/healthz');
+ const home=await fetch(base+'/?from=mobile');\n assert.equal(home.status,200);\n assert.match(await home.text(),/贴吧需求雷达|需求雷达/);\n for(const [route,type] of [['/manifest.webmanifest','application/manifest+json'],['/sw.js','text/javascript'],['/icon.svg','image/svg+xml']]){const asset=await fetch(base+route);assert.equal(asset.status,200,route);assert.match(asset.headers.get('content-type'),new RegExp(type.replace(/[.*+?^${}()|[\]\\]/g,'\\ const health=await fetch(base+'/healthz');')));}\n const appRoute=await fetch(base+'/app/');assert.equal(appRoute.status,200);assert.match(await appRoute.text(),/需求雷达/);\n const health=await fetch(base+'/healthz');
  assert.equal(health.status,200);
- assert.deepEqual(await health.json(),{ok:true,service:'tieba-demand-radar',version:'2.3.0',inlineScriptsChecked:1,publicSearchConfigured:false});
+ assert.deepEqual(await health.json(),{ok:true,service:'tieba-demand-radar',version:'2.4.1',inlineScriptsChecked:1,publicSearchConfigured:false});
  const response=await fetch(base+'/api/analyze',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({title:'求一本小说',content:'只记得主角在雪山遇见老人，后来寻找父亲。',forum:'找书吧',url:'https://tieba.baidu.com/p/123'})});
  assert.equal(response.status,200);
  const result=await response.json();
