@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Script} from 'node:vm';
-import {classifyDemand,buildSearchQueries,buildContactDraft} from './engine.mjs';
+import {classifyDemand,buildSearchQueries,buildContactDraft} from './engine.mjs';\nimport {searchPublicPosts} from './search.mjs';
 const root=path.dirname(fileURLToPath(import.meta.url));
 const port=Number(process.env.PORT||3000);
 const htmlPath=path.join(root,'index.html');
@@ -14,8 +14,8 @@ for(const [i,source] of inlineScripts.entries())new Script(source,{filename:'ind
 console.log('Inline browser JavaScript syntax check passed ('+inlineScripts.length+' script).');
 const send=(res,status,type,body)=>{res.writeHead(status,{'content-type':type,'x-content-type-options':'nosniff','cache-control':'no-store'});res.end(body)};
 const server=http.createServer(async(req,res)=>{
- if(req.method==='GET'&&req.url==='/healthz')return send(res,200,'application/json; charset=utf-8',JSON.stringify({ok:true,service:'tieba-demand-radar',version:'2.1.0',inlineScriptsChecked:inlineScripts.length}));
- if(req.method==='POST'&&req.url==='/api/analyze'){let raw='';req.on('data',c=>{raw+=c;if(raw.length>200000)req.destroy()});req.on('end',()=>{try{const d=JSON.parse(raw||'{}');send(res,200,'application/json; charset=utf-8',JSON.stringify({...classifyDemand(d),searchQueries:buildSearchQueries(d),contactDraft:buildContactDraft(d)}))}catch{send(res,400,'application/json; charset=utf-8',JSON.stringify({error:'Invalid JSON'}))}});return}
+ if(req.method==='GET'&&req.url==='/healthz')return send(res,200,'application/json; charset=utf-8',JSON.stringify({ok:true,service:'tieba-demand-radar',version:'2.2.0',inlineScriptsChecked:inlineScripts.length,publicSearchConfigured:Boolean(process.env.BAIDU_QIANFAN_API_KEY)}));
+ if(req.method==='POST'&&req.url==='/api/search'){let raw='';req.on('data',c=>{raw+=c;if(raw.length>20000)req.destroy()});req.on('end',async()=>{try{const d=JSON.parse(raw||'{}');const results=await searchPublicPosts(d.queries||[],process.env.BAIDU_QIANFAN_API_KEY);send(res,200,'application/json; charset=utf-8',JSON.stringify({ok:true,results,scannedAt:new Date().toISOString()}))}catch(e){send(res,e.status||500,'application/json; charset=utf-8',JSON.stringify({error:e.message||'Search failed',code:e.code||'SEARCH_FAILED'}))}});return}\n if(req.method==='POST'&&req.url==='/api/analyze'){let raw='';req.on('data',c=>{raw+=c;if(raw.length>200000)req.destroy()});req.on('end',()=>{try{const d=JSON.parse(raw||'{}');send(res,200,'application/json; charset=utf-8',JSON.stringify({...classifyDemand(d),searchQueries:buildSearchQueries(d),contactDraft:buildContactDraft(d)}))}catch{send(res,400,'application/json; charset=utf-8',JSON.stringify({error:'Invalid JSON'}))}});return}
  if(req.method==='GET'&&(req.url==='/'||req.url==='/index.html'))return send(res,200,'text/html; charset=utf-8',html);
  send(res,404,'text/plain; charset=utf-8','Not found');
 });
