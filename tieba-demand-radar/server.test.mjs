@@ -10,7 +10,7 @@ test('HTTP health, analyze and public search endpoints',async(t)=>{
  const base='http://127.0.0.1:'+port;
  const health=await fetch(base+'/healthz');
  assert.equal(health.status,200);
- assert.deepEqual(await health.json(),{ok:true,service:'tieba-demand-radar',version:'2.2.0',inlineScriptsChecked:1,publicSearchConfigured:false});
+ assert.deepEqual(await health.json(),{ok:true,service:'tieba-demand-radar',version:'2.3.0',inlineScriptsChecked:1,publicSearchConfigured:false});
  const response=await fetch(base+'/api/analyze',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({title:'求一本小说',content:'只记得主角在雪山遇见老人，后来寻找父亲。',forum:'找书吧',url:'https://tieba.baidu.com/p/123'})});
  assert.equal(response.status,200);
  const result=await response.json();
