@@ -1,0 +1,18 @@
+{
+  "id": "/",
+  "name": "贴吧需求雷达",
+  "short_name": "需求雷达",
+  "description": "发现公开需求、筛选线索、管理寻源与跟进",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait-primary",
+  "background_color": "#0b1220",
+  "theme_color": "#101827",
+  "categories": ["productivity", "business", "utilities"],
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
