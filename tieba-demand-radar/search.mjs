@@ -3,7 +3,7 @@ const API='https://qianfan.baidubce.com/v2/ai_search/web_search';
 export async function searchPublicPosts(queries,apiKey,fetchImpl=fetch){
  if(!apiKey)throw Object.assign(new Error('未配置百度千帆搜索 API Key。请在 Render 服务环境变量中设置 BAIDU_QIANFAN_API_KEY。'),{status:503,code:'SEARCH_KEY_MISSING'});
  if(!Array.isArray(queries)||!queries.length)throw Object.assign(new Error('至少提供一个搜索词'),{status:400,code:'INVALID_QUERIES'});
- const clean=queries.slice(0,5).map(x=>String(x||'').trim()).filter(Boolean);
+ const clean=queries.slice(0,5).map(x=>String(x||'').trim()).filter(Boolean);\n if(clean.some(q=>!/^site:tieba\\.baidu\\.com\\//i.test(q)))throw Object.assign(new Error('搜索词必须限定在 site:tieba.baidu.com/，避免超出贴吧公开帖子范围。'),{status:400,code:'TIEBA_SCOPE_REQUIRED'});
  if(!clean.length)throw Object.assign(new Error('搜索词不能为空'),{status:400,code:'INVALID_QUERIES'});
  const all=[];
  for(const query of clean){
