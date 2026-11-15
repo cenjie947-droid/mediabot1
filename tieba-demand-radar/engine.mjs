@@ -8,7 +8,12 @@ export function classifyDemand({title='',content='',forum='',url=''}={}) {
  else if(/电影|电视剧|动漫|动画|片名|剧集|找片/.test(text))category='影视';
  else if(/游戏|手游|单机|steam/i.test(text))category='游戏';
  else if(/歌曲|音乐|旋律|歌词|bgm/i.test(text))category='音乐';
- else if(/软件|工具|插件|脚本|程序|app|应用|源码|自动化/.test(text))category='软件与工具';\n else if(/设计|海报|logo|建模|渲染|剪辑|配音|绘画|插画|分镜/.test(text))category='设计与创作';\n else if(/代码|编程|开发|网站|小程序|接口|api|部署|服务器|数据库|报错|bug/.test(text))category='开发与技术';\n else if(/写作|文案|润色|翻译|校对|简历|论文|报告/.test(text))category='写作与翻译';\n else if(/数据|表格|excel|爬虫|录入|ppt|word|pdf|统计分析/.test(text))category='数据与办公';\n else if(/资料|文献|教程|文件|电子书|课程|素材|模板/.test(text))category='资料';
+ else if(/软件|工具|插件|脚本|程序|app|应用|源码|自动化/.test(text))category='软件与工具';
+ else if(/设计|海报|logo|建模|渲染|剪辑|配音|绘画|插画|分镜/.test(text))category='设计与创作';
+ else if(/代码|编程|开发|网站|小程序|接口|api|部署|服务器|数据库|报错|bug/.test(text))category='开发与技术';
+ else if(/写作|文案|润色|翻译|校对|简历|论文|报告/.test(text))category='写作与翻译';
+ else if(/数据|表格|excel|爬虫|录入|ppt|word|pdf|统计分析/.test(text))category='数据与办公';
+ else if(/资料|文献|教程|文件|电子书|课程|素材|模板/.test(text))category='资料';
  const detail=Math.min(24,(String(content).length>=30?8:0)+(String(content).length>=100?8:0)+(String(content).length>=220?8:0));
  const score=Math.max(0,Math.min(100,35+detail+(url?10:0)+(forum?7:0)+(/[？?]|求|寻找|想找|求助/.test(text)?12:0)-(exclusion?100:0)));
  return {category,score,excluded:Boolean(exclusion),excludeReason:exclusion?.[0]||null,recommendation:exclusion?'排除':score>=55?'优先跟进':'人工复核'};
