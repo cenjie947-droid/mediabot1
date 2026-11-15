@@ -70,9 +70,13 @@ document.addEventListener('click',e=>{
    try{
     const result=await callRadarFunction({action:'research',apiKey:key,title:d.title,description:d.content,category:d.category});
     const list=box.querySelector('#source-results');
-    box.querySelector('.muted').textContent='检索 '+result.query_count+' 组关键词，收集 '+result.result_count+' 条去重候选。匹配分仅代表描述关键词重合，不是 AI 确认。';
-    list.innerHTML=(result.candidates||[]).map((x,i)=>'<article class="item"><div class="row between"><b>'+esc(x.title||'未命名结果')+'</b><span class="score">'+x.match_score+'分</span></div><p>'+esc(x.snippet||'暂无摘要')+'</p><p class="muted">来源：'+esc(x.source)+' · 命中词：'+esc((x.matched_terms||[]).join('、')||'无')+'</p><p><a href="'+esc(x.url)+'" target="_blank" rel="noopener">打开来源核验 ↗</a></p><button class="btn" data-savecandidate="'+esc(d.id)+'" data-name="'+esc(x.title||'')+'" data-url="'+esc(x.url)+'" data-proof="'+esc(x.snippet||'')+'">保存为待核验候选</button></article>').join('')||'<div class="empty">没有找到可展示的候选网页。</div>';
-    box.insertAdjacentHTML('beforeend','<p class="muted">'+esc(result.warning||'所有候选均需人工核验。')+'</p>');
+    d.researchStatus=result.status||'未找到';d.researchReason=result.reason||'';d.researchedAt=result.searched_at||new Date().toISOString();
+    d.candidates=(result.candidates||[]).map(x=>({id:crypto.randomUUID(),name:x.name||x.title,source:x.url,proof:x.evidence_quote||x.snippet||'',matchedClues:x.matched_clues||[],conflicts:x.conflicts||[],missing:x.missing||[],confidence:x.confidence||0,verified:false,match:x.match||'疑似',domain:x.source||'',createdAt:Date.now()}));
+    if(result.status==='已找到')d.status='已找到';else if(result.status==='疑似找到')d.status='疑似找到';else d.status='未找到';
+    persist();
+    box.querySelector('.muted').textContent='AI 分析完成：'+(result.status||'未找到')+'；检索 '+result.query_count+' 组线索，得到 '+result.result_count+' 个候选。';
+    list.innerHTML='<div class="notice"><b>本轮结论：'+esc(result.status||'未找到')+'</b><p>'+esc(result.reason||'暂无额外说明')+'</p><p>'+esc((result.clues||[]).join('；'))+'</p><p>'+esc(result.warning||'请核验来源。')+'</p></div>'+(result.candidates||[]).map(x=>'<article class="item"><div class="row between"><b>'+esc(x.name||x.title||'未命名候选')+'</b><span class="tag '+(x.match==='匹配'?'good':'warn')+'">'+esc(x.match||'疑似')+' · '+esc(String(x.confidence||0))+'分</span></div><p>'+esc(x.snippet||'暂无摘要')+'</p><p><b>匹配线索：</b>'+esc((x.matched_clues||[]).join('；')||'暂无直接支持线索')+'</p><p><b>冲突：</b>'+esc((x.conflicts||[]).join('；')||'未发现明确冲突')+'</p><p><b>待核实：</b>'+esc((x.missing||[]).join('；')||'无')+'</p><blockquote>'+esc(x.evidence_quote||'没有可摘录的直接证据')+'</blockquote><p class="muted">来源域名：'+esc(x.source||'未知')+'</p><p><a href="'+esc(x.url)+'" target="_blank" rel="noopener">打开原始来源 ↗</a></p></article>').join('')||'<div class="empty">本轮未找到可展示候选。</div>';
+    box.insertAdjacentHTML('beforeend','<p class="muted">本轮结果已自动保存到该需求。'+esc(result.warning||'')+'</p>');
    }catch(err){box.querySelector('.muted').textContent='寻源失败：'+err.message}
   })();
  }
