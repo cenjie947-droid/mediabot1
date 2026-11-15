@@ -108,6 +108,7 @@ $('logout').onclick=async()=>{await sb.auth.signOut();currentUser=null;showAuth(
 if(cfg.forums)$('forums').value=cfg.forums;if(cfg.keywords)$('keywords').value=cfg.keywords;render();
 let installPrompt=null;
 const installBtn=$('install-app'),installHelp=$('install-help');
+if(/iphone|ipad|ipod/i.test(navigator.userAgent)){installBtn.classList.add('ready');installBtn.textContent='安装到 iPhone';}
 window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();installPrompt=event;installBtn.classList.add('ready');installBtn.textContent='安装到手机';});
 window.addEventListener('appinstalled',()=>{installPrompt=null;installBtn.classList.remove('ready');installHelp.classList.add('hidden');});
 installBtn.onclick=async()=>{
