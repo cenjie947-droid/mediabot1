@@ -71,5 +71,5 @@ $('signin').onclick=async()=>{const email=$('authmail').value.trim(),password=$(
 $('signup').onclick=async()=>{const email=$('authmail').value.trim(),password=$('authpass').value;if(!email||password.length<6)return showAuth('请填写有效邮箱，密码至少 6 位');$('signup').disabled=true;try{const {data:res,error}=await sb.auth.signUp({email,password});if(error)throw error;if(res.session){currentUser=res.user;await loadCloud();showAuth('注册成功，已登录并同步')}else showAuth('注册申请已提交。请查收邮箱确认链接，确认后回来登录。')}catch(e){showAuth('注册失败：'+e.message)}finally{$('signup').disabled=false}};
 $('logout').onclick=async()=>{await sb.auth.signOut();currentUser=null;showAuth('已退出登录；本设备的本地数据仍保留')};
 (async()=>{const {data:res}=await sb.auth.getSession();if(res.session){currentUser=res.session.user;try{await loadCloud();showAuth('已恢复登录，云端同步完成')}catch(e){showAuth('云端读取失败：'+e.message)}}else showAuth('未登录：先注册或登录即可开启云端同步')})();
-\nif(cfg.forums)$('forums').value=cfg.forums;if(cfg.keywords)$('keywords').value=cfg.keywords;render();
+if(cfg.forums)$('forums').value=cfg.forums;if(cfg.keywords)$('keywords').value=cfg.keywords;render();
 </script></body></html>
