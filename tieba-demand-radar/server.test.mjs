@@ -2,13 +2,24 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
-test('HTTP health, analyze and public search endpoints',async(t)=>{
+
+test('HTTP health, app shell, PWA assets and API endpoints',async(t)=>{
  const port=19000+Math.floor(Math.random()*1000);
  const child=spawn(process.execPath,['server.mjs'],{cwd:new URL('.',import.meta.url),env:{...process.env,PORT:String(port),BAIDU_QIANFAN_API_KEY:''},stdio:['ignore','pipe','pipe']});
  await Promise.race([once(child.stdout,'data'),new Promise((_,reject)=>setTimeout(()=>reject(new Error('server start timeout')),5000))]);
  t.after(()=>{if(!child.killed)child.kill('SIGTERM')});
  const base='http://127.0.0.1:'+port;
- const home=await fetch(base+'/?from=mobile');\n assert.equal(home.status,200);\n assert.match(await home.text(),/贴吧需求雷达|需求雷达/);\n for(const [route,type] of [['/manifest.webmanifest','application/manifest+json'],['/sw.js','text/javascript'],['/icon.svg','image/svg+xml']]){const asset=await fetch(base+route);assert.equal(asset.status,200,route);assert.match(asset.headers.get('content-type'),new RegExp(type.replace(/[.*+?^${}()|[\]\\]/g,'\\ const health=await fetch(base+'/healthz');')));}\n const appRoute=await fetch(base+'/app/');assert.equal(appRoute.status,200);assert.match(await appRoute.text(),/需求雷达/);\n const health=await fetch(base+'/healthz');
+ for(const route of ['/?from=mobile','/','/index.html','/app/']){
+  const response=await fetch(base+route);
+  assert.equal(response.status,200,route);
+  assert.match(await response.text(),/需求雷达/);
+ }
+ for(const [route,expected] of [['/manifest.webmanifest','application/manifest+json'],['/sw.js','text/javascript'],['/icon.svg','image/svg+xml']]){
+  const response=await fetch(base+route);
+  assert.equal(response.status,200,route);
+  assert.ok(response.headers.get('content-type').includes(expected),route);
+ }
+ const health=await fetch(base+'/healthz');
  assert.equal(health.status,200);
  assert.deepEqual(await health.json(),{ok:true,service:'tieba-demand-radar',version:'2.4.1',inlineScriptsChecked:1,publicSearchConfigured:false});
  const response=await fetch(base+'/api/analyze',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({title:'求一本小说',content:'只记得主角在雪山遇见老人，后来寻找父亲。',forum:'找书吧',url:'https://tieba.baidu.com/p/123'})});
