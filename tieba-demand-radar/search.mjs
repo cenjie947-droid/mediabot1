@@ -3,7 +3,7 @@ const API='https://qianfan.baidubce.com/v2/ai_search/web_search';
 function normalizeQuery(input){
  const q=String(input||'').trim();
  const lower=q.toLowerCase();
- for(const prefix of ['site:tieba.baidu.com/p ','site:tieba.baidu.com/ '])if(lower.startsWith(prefix))return q.slice(prefix.length).trim();
+ for(const prefix of ['site:tieba.baidu.com/p','site:tieba.baidu.com/'])if(lower.startsWith(prefix))return q.slice(prefix.length).replace(/^\\/?\\s*/,'').trim();
  return q;
 }
 export async function searchPublicPosts(queries,apiKey,fetchImpl=fetch){
