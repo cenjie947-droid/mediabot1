@@ -8,7 +8,7 @@ const root=path.dirname(fileURLToPath(import.meta.url));
 const port=Number(process.env.PORT||3000);
 const htmlPath=path.join(root,'index.html');
 const html=await readFile(htmlPath,'utf8');
-const inlineScripts=[...html.matchAll(/<script(?![^>]*\\bsrc=)[^>]*>([\\s\\S]*?)<\\/script>/gi)].map(m=>m[1]);
+const inlineScripts=[...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi)].map(m=>m[1]);
 if(!inlineScripts.length)throw new Error('No inline app script found');
 for(const [i,source] of inlineScripts.entries())new Script(source,{filename:'index-inline-'+i+'.js'});
 console.log('Inline browser JavaScript syntax check passed ('+inlineScripts.length+' script).');
