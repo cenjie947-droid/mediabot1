@@ -58,11 +58,26 @@ document.addEventListener('click',e=>{
  if(!d)return;
  if(b.dataset.edit)open(d);
  if(b.dataset.research){
-  const qs=[d.title+' '+d.content.slice(0,70),d.forum+' '+d.title,d.content.slice(0,90)+' 作品名'];
   const box=document.createElement('div');box.className='panel';
-  box.innerHTML='<h2>检索策略：'+esc(d.title)+'</h2>'+qs.map(q=>'<p><a target="_blank" rel="noopener" href="https://www.baidu.com/s?wd='+encodeURIComponent(q)+'">百度搜索：'+esc(q)+'</a></p>').join('')+'<button class="btn" id="draft">生成私信草稿</button><div id="out"></div>';
+  box.innerHTML='<h2>自动寻源：'+esc(d.title)+'</h2><p class="muted">正在根据原始描述检索公开网页，收集候选作品与来源证据…</p><div class="items" id="source-results"></div>';
   $('research-list').prepend(box);
-  $('draft').onclick=()=>{const message='你好，看到你之前在「'+(d.forum||'贴吧')+'」寻找「'+d.title+'」，我想确认一下你现在是否还需要？如果需要，我可以先把匹配线索和来源发给你核对。';$('out').innerHTML='<textarea rows="4">'+esc(message)+'</textarea>'};
+  const key=sessionStorage.getItem('tieba-radar-api-key')||'';
+  if(!key){box.querySelector('.muted').textContent='请先到「设置与备份」填写并临时保存百度千帆 API Key。';return}
+  (async()=>{
+   try{
+    const result=await callRadarFunction({action:'research',apiKey:key,title:d.title,description:d.content,category:d.category});
+    const list=box.querySelector('#source-results');
+    box.querySelector('.muted').textContent='检索 '+result.query_count+' 组关键词，收集 '+result.result_count+' 条去重候选。匹配分仅代表描述关键词重合，不是 AI 确认。';
+    list.innerHTML=(result.candidates||[]).map((x,i)=>'<article class="item"><div class="row between"><b>'+esc(x.title||'未命名结果')+'</b><span class="score">'+x.match_score+'分</span></div><p>'+esc(x.snippet||'暂无摘要')+'</p><p class="muted">来源：'+esc(x.source)+' · 命中词：'+esc((x.matched_terms||[]).join('、')||'无')+'</p><p><a href="'+esc(x.url)+'" target="_blank" rel="noopener">打开来源核验 ↗</a></p><button class="btn" data-savecandidate="'+esc(d.id)+'" data-name="'+esc(x.title||'')+'" data-url="'+esc(x.url)+'" data-proof="'+esc(x.snippet||'')+'">保存为待核验候选</button></article>').join('')||'<div class="empty">没有找到可展示的候选网页。</div>';
+    box.insertAdjacentHTML('beforeend','<p class="muted">'+esc(result.warning||'所有候选均需人工核验。')+'</p>');
+   }catch(err){box.querySelector('.muted').textContent='寻源失败：'+err.message}
+  })();
+ }
+ if(b.dataset.savecandidate){
+  const d0=data.find(x=>x.id===b.dataset.savecandidate);if(!d0)return;
+  d0.candidates=d0.candidates||[];
+  if(!d0.candidates.some(x=>x.source===b.dataset.url))d0.candidates.push({id:crypto.randomUUID(),name:b.dataset.name,source:b.dataset.url,proof:b.dataset.proof,createdAt:Date.now(),verified:false});
+  d0.status='寻源中';persist();b.textContent='已保存候选';b.disabled=true;
  }
  if(b.dataset.evidence){
   const name=prompt('候选作品名称 / 版本？');if(!name)return;
