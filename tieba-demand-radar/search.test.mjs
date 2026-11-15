@@ -13,6 +13,7 @@ test('使用官方 site 过滤参数，只保留贴吧域名并去重',async()=>
  const rows=await searchPublicPosts(['site:tieba.baidu.com/p 求书'],'fake-key',fake);
  assert.deepEqual(sent.search_filter.match.site,['tieba.baidu.com']);
  assert.equal(sent.messages[0].content,'求书');
+ assert.equal(rows[0].url,'https://tieba.baidu.com/p/123');
  assert.equal(rows.length,1);assert.equal(rows[0].category,'书籍');
 });
 test('空关键词安全拒绝',async()=>{await assert.rejects(()=>searchPublicPosts(['site:tieba.baidu.com/p '],'fake-key'),e=>e.code==='INVALID_QUERIES')});
