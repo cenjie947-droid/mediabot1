@@ -52,9 +52,9 @@ function open(d){$('form').reset();$('id').value=d?.id||'';$('mt').textContent=d
 function saveDemand(raw){let a=assess(raw),rawKey=normText(raw.title+' '+raw.content),same=data.find(x=>(raw.url&&x.url===raw.url)||(rawKey.length>=8&&normText(x.title+' '+x.content)===rawKey));if(same){same.duplicates=(same.duplicates||1)+1;return}let st=a.offline||a.spam?'已排除':a.score>=55?'可承接':'待筛选';data.unshift({...raw,id:crypto.randomUUID(),...a,status:st,time:Date.now(),candidates:[]})}
 $('add').onclick=()=>open();$('close').onclick=$('cancel').onclick=()=>$('modal').classList.remove('show');$('form').onsubmit=e=>{e.preventDefault();let id=$('id').value,raw={title:$('title').value.trim(),content:$('content').value.trim(),forum:$('forum').value.trim(),url:$('url').value.trim()};if(id){let d=data.find(x=>x.id===id);Object.assign(d,raw,assess(raw))}else saveDemand(raw);persist();$('modal').classList.remove('show')};
 document.addEventListener('click',e=>{
- const b=e.target.closest('[data-edit],[data-research],[data-contact],[data-evidence]');
+ const b=e.target.closest('[data-edit],[data-research],[data-contact],[data-evidence],[data-savecandidate]');
  if(!b)return;
- const d=data.find(x=>x.id===b.dataset.edit||x.id===b.dataset.research||x.id===b.dataset.contact||x.id===b.dataset.evidence);
+ const d=data.find(x=>x.id===b.dataset.edit||x.id===b.dataset.research||x.id===b.dataset.contact||x.id===b.dataset.evidence||x.id===b.dataset.savecandidate);
  if(!d)return;
  if(b.dataset.edit)open(d);
  if(b.dataset.research){
