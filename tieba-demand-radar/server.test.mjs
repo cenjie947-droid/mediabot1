@@ -18,6 +18,9 @@ test('HTTP health and analyze endpoints',async(t)=>{
  assert.equal(result.category,'书籍');
  assert.ok(result.searchQueries.length>=2);
  assert.match(result.contactDraft,/还需要吗/);
- const search=await fetch(base+'/api/search',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({queries:['site:tieba.baidu.com/p 求书']})});\n assert.equal(search.status,503);\n assert.equal((await search.json()).code,'SEARCH_KEY_MISSING');\n const bad=await fetch(base+'/api/analyze',{method:'POST',headers:{'content-type':'application/json'},body:'{bad'});
+ const search=await fetch(base+'/api/search',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({queries:['site:tieba.baidu.com/p 求书']})});\n assert.equal(search.status,503);\n assert.equal((await search.json()).code,'SEARCH_KEY_MISSING');\n const search=await fetch(base+'/api/search',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({queries:['site:tieba.baidu.com/p 求书']})});
+ assert.equal(search.status,503);
+ assert.equal((await search.json()).code,'SEARCH_KEY_MISSING');
+ const bad=await fetch(base+'/api/analyze',{method:'POST',headers:{'content-type':'application/json'},body:'{bad'});
  assert.equal(bad.status,400);
 });
