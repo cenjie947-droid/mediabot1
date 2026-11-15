@@ -32,11 +32,11 @@ $('scanbtn').onclick=async()=>{
  try{
   const apiKey=sessionStorage.getItem('tieba-radar-api-key')||'';if(!apiKey)throw new Error('请先到「设置与备份」填写百度千帆 API Key 并临时保存。');const payload=await callRadarFunction({action:'scan',queries,apiKey}),rows=payload.results||[];
   const before=data.length;
-  rows.forEach(x=>saveDemand({title:x.title,content:x.content,forum:'贴吧',url:x.source_url||x.url}));
+  const savedRows=rows.map(x=>({row:x,demand:(()=>{saveDemand({title:x.title,content:x.content,forum:'贴吧',url:x.source_url||x.url});return data.find(d=>d.url===(x.source_url||x.url));})()}));
   persist();
   const added=data.length-before;
   $('searchstate').textContent='扫描完成：原始结果 '+(payload.scanned||rows.length)+' 条，去重后 '+rows.length+' 条；新增归档 '+added+' 条，重复 '+Math.max(0,rows.length-added)+' 条。';
-  $('scanresults').innerHTML=rows.map(x=>'<article class="item"><div class="row between"><span class="tag">'+esc(x.category)+'</span><span class="tag '+(x.is_excluded?'bad':x.qualified?'good':'warn')+'">'+(x.is_excluded?'排除':x.qualified?'可复核':'低优先级')+'</span></div><h3>'+esc(x.title)+'</h3><p>'+esc(x.content)+'</p><p><a href="'+esc(x.source_url||x.url)+'" target="_blank" rel="noopener">打开贴吧原帖 ↗</a> · '+esc(x.source||'百度搜索')+'</p><div class="row between"><small class="muted">'+esc(x.published_at||'日期未知')+' · '+esc(x.search_query||'')+'</small><b class="score">'+x.score+'分</b></div><div class="actions"><span class="tag good">已自动归档</span></div></article>').join('')||'<div class="empty">近 30 天没有找到可展示的贴吧结果。可以更换关键词再试。</div>';
+  $('scanresults').innerHTML=savedRows.map(({row:x,demand})=>'<article class="item"><div class="row between"><span class="tag">'+esc(x.category)+'</span><span class="tag warn">待人工筛选</span></div><h3>'+esc(x.title)+'</h3><p>'+esc(x.content)+'</p><p><a href="'+esc(x.source_url||x.url)+'" target="_blank" rel="noopener">打开贴吧原帖 ↗</a> · '+esc(x.source||'百度搜索')+'</p><div class="row between"><small class="muted">'+esc(x.published_at||'日期未知')+' · '+esc(x.search_query||'')+'</small><b class="score">'+x.score+'分</b></div><div class="actions"><button class="btn primary" data-research="'+esc(demand?.id||'')+'" '+(demand?'':'disabled')+'>开始寻源</button><span class="tag good">已归档</span></div></article>').join('')||'<div class="empty">近 30 天没有找到可展示的贴吧结果。可以更换关键词再试。</div>';
  }catch(e){$('searchstate').textContent=e.message;$('scanresults').innerHTML='<div class="empty">扫描未完成：'+esc(e.message)+'</div>';}
  finally{btn.disabled=false;btn.textContent='开始扫描';}
 };
