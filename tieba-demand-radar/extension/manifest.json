@@ -10,7 +10,8 @@
     "downloads"
   ],
   "host_permissions": [
-    "https://tieba.baidu.com/*"
+    "https://tieba.baidu.com/*",
+    "https://tieba-demand-radar.onrender.com/*"
   ],
   "background": {
     "service_worker": "background.js"
